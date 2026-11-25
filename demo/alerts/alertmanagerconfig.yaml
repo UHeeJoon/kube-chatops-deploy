@@ -1,0 +1,25 @@
+# demo 네임스페이스 알림 → n8n WF-02 (aiops 내부 webhook).
+# Alertmanager 의 매처 전략이 OnNamespace 라서 이 설정은 namespace="demo" 알림에만 적용된다. 그래서 aiops 가 아니라 여기 둔다.
+apiVersion: monitoring.coreos.com/v1alpha1
+kind: AlertmanagerConfig
+metadata:
+  name: kube-chatops
+  namespace: demo
+spec:
+  route:
+    receiver: n8n
+    matchers:
+      - { name: kube_chatops, value: "true", matchType: "=" }
+    groupBy: [alertname]
+    groupWait: 30s
+    groupInterval: 5m
+    repeatInterval: 4h # 같은 알림으로 4시간 안에 다시 조사하지 않는다 (비용)
+  receivers:
+    - name: n8n
+      webhookConfigs:
+        - url: http://n8n.aiops.svc:5678/webhook/alert
+          sendResolved: false
+          httpConfig:
+            authorization:
+              type: Bearer
+              credentials: { name: n8n-alert-webhook, key: token }

@@ -1,0 +1,83 @@
+# chat-gateway: Slack Socket Mode 로 메시지를 받아 n8n 에 넘기고, n8n 의 요청으로 Slack 에 답한다.
+# Socket Mode 는 파드가 Slack 으로 웹소켓을 여는 방식이라 공개 엔드포인트(인그레스)가 없다.
+# 복제본 1: 연결이 여러 개면 Slack 이 이벤트를 나눠 보내 순서가 섞인다.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chat-gateway
+  namespace: aiops
+  labels: { app.kubernetes.io/name: chat-gateway, app.kubernetes.io/part-of: kube-chatops }
+  annotations:
+    reloader.stakater.com/auto: "true"
+spec:
+  replicas: 1
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels: { app.kubernetes.io/name: chat-gateway }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: chat-gateway, app.kubernetes.io/part-of: kube-chatops }
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: app
+          image: ghcr.io/uheejoon/kube-chatops/chat-gateway@sha256:6dd3841d03f9026fe5aa0f02370fde14c9bda1db7b829dd0486daffdd2d26363
+          ports:
+            - { name: http, containerPort: 8080 }
+            - { name: metrics, containerPort: 9090 }
+          env:
+            - name: SLACK_APP_TOKEN
+              valueFrom: { secretKeyRef: { name: chat-gateway-slack, key: app_token } }
+            - name: SLACK_BOT_TOKEN
+              valueFrom: { secretKeyRef: { name: chat-gateway-slack, key: bot_token } }
+            - name: N8N_WEBHOOK_TOKEN
+              valueFrom: { secretKeyRef: { name: chat-n8n-webhook, key: token } }
+            - name: API_TOKEN
+              valueFrom: { secretKeyRef: { name: chat-gateway-api, key: token } }
+            - { name: N8N_WEBHOOK_URL, value: "http://n8n.aiops.svc:5678/webhook/chat" }
+            - { name: ALERT_CHANNEL, value: "" } # 알림을 올릴 Slack 채널 ID
+          resources:
+            requests: { cpu: 20m, memory: 96Mi }
+            limits: { memory: 256Mi }
+          readinessProbe:
+            httpGet: { path: /readyz, port: http } # Slack 웹소켓이 연결돼 있어야 Ready
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 20
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - { name: tmp, emptyDir: { sizeLimit: 16Mi } }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: chat-gateway
+  namespace: aiops
+  labels: { app.kubernetes.io/name: chat-gateway }
+spec:
+  selector: { app.kubernetes.io/name: chat-gateway }
+  ports:
+    - { name: http, port: 8080, targetPort: http }
+    - { name: metrics, port: 9090, targetPort: metrics }
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: chat-gateway
+  namespace: aiops
+spec:
+  selector:
+    matchLabels: { app.kubernetes.io/name: chat-gateway }
+  endpoints:
+    - { port: metrics, path: /metrics, interval: 30s }

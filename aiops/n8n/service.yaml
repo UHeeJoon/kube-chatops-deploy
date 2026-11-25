@@ -19,6 +19,14 @@ spec:
     - { name: admin-gateway, namespace: ingress }
   hostnames: [n8n.ascode.click]
   rules:
+    # webhook 은 클러스터 안(chat-gateway, Alertmanager)에서만 부른다. Gateway 로 들어온 webhook 요청은 첫 화면으로 돌린다.
+    - matches:
+        - path: { type: PathPrefix, value: /webhook }
+        - path: { type: PathPrefix, value: /webhook-test }
+        - path: { type: PathPrefix, value: /webhook-waiting }
+      filters:
+        - type: RequestRedirect
+          requestRedirect: { path: { type: ReplaceFullPath, replaceFullPath: / }, statusCode: 302 }
     - backendRefs:
         - { name: n8n, port: 5678 }
 ---

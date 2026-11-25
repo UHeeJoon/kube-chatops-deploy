@@ -1,0 +1,47 @@
+# chat-gateway
+# 들어옴: n8n 만 (8080 내부 API). 스크레이프는 기준선이 허용.
+# 나감: n8n webhook(5678), Slack(443, 아래 Cilium FQDN 정책). 그 외 차단.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: chat-gateway, namespace: aiops }
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/name: chat-gateway }
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: { app.kubernetes.io/name: n8n }
+      ports:
+        - { port: 8080, protocol: TCP }
+  egress:
+    - to:
+        - podSelector:
+            matchLabels: { app.kubernetes.io/name: n8n }
+      ports:
+        - { port: 5678, protocol: TCP }
+---
+# Slack API(slack.com)와 Socket Mode 웹소켓(wss-primary.slack.com 등)만 이름으로 허용
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata: { name: chat-gateway-slack, namespace: aiops }
+spec:
+  endpointSelector:
+    matchLabels: { app.kubernetes.io/name: chat-gateway }
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - { port: "53", protocol: ANY }
+          rules:
+            dns:
+              - matchPattern: "*"
+    - toFQDNs:
+        - matchName: slack.com
+        - matchPattern: "*.slack.com"
+      toPorts:
+        - ports:
+            - { port: "443", protocol: TCP }

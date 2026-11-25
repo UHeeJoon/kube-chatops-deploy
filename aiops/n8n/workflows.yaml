@@ -1,0 +1,909 @@
+# 생성 파일: scripts/gen-n8n-workflows.py 로 다시 만든다. 직접 고치지 말 것.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: n8n-workflows
+  namespace: aiops
+  labels: { app.kubernetes.io/name: n8n }
+data:
+  wf-01-intake.json: |
+    {
+     "id": "kcwf01intake0001",
+     "name": "WF-01 intake (Slack 이벤트)",
+     "active": true,
+     "nodes": [
+      {
+       "id": "bb99ef93-81ab-5268-a390-28b937cb9047",
+       "name": "Slack 이벤트",
+       "type": "n8n-nodes-base.webhook",
+       "typeVersion": 2,
+       "position": [
+        0,
+        300
+       ],
+       "parameters": {
+        "httpMethod": "POST",
+        "path": "chat",
+        "authentication": "headerAuth",
+        "responseMode": "onReceived",
+        "options": {}
+       },
+       "credentials": {
+        "httpHeaderAuth": {
+         "id": "kchookchat000001",
+         "name": "webhook: chat-gateway"
+        }
+       },
+       "webhookId": "079724a1-cc5c-5cb1-92a3-099c891b4953"
+      },
+      {
+       "id": "5b3352d5-a41c-5d1b-92c4-446bcaf8c404",
+       "name": "준비",
+       "type": "n8n-nodes-base.code",
+       "typeVersion": 2,
+       "position": [
+        220,
+        300
+       ],
+       "parameters": {
+        "jsCode": "// chat-gateway 가 보낸 공통 이벤트 JSON (body). 권한을 확인하고 다음 단계를 정한다.\nconst ROLES = {};\nconst ev = $json.body ?? {};\nconst role = ROLES[ev.user_id] ?? 'none';\nlet mode = 'route', reply = '';\nif (role === 'none') {\n  mode = 'reply';\n  reply = `권한이 없습니다. 운영자에게 사용자 ID \\`${ev.user_id}\\` 등록을 요청하세요.`;\n} else if (ev.type === 'button_click') {\n  mode = 'reply';\n  reply = '승인 버튼 처리는 아직 준비 중입니다.';\n} else if (!(ev.text ?? '').trim()) {\n  mode = 'reply';\n  reply = '무엇을 도와드릴까요? 예: \"주문 조회가 느려졌어요, 원인 확인해줘\"';\n}\nreturn [{ json: { ...ev, role, mode, reply, started_at: Date.now() } }];"
+       }
+      },
+      {
+       "id": "f2aaa4ff-2d36-52b8-b773-b93d99f6da23",
+       "name": "분류 필요?",
+       "type": "n8n-nodes-base.if",
+       "typeVersion": 2.2,
+       "position": [
+        440,
+        300
+       ],
+       "parameters": {
+        "conditions": {
+         "options": {
+          "caseSensitive": true,
+          "leftValue": "",
+          "typeValidation": "loose",
+          "version": 2
+         },
+         "conditions": [
+          {
+           "id": "b3e1615b-1e66-50e6-8a17-6c72a57741d6",
+           "leftValue": "={{ $json.mode === 'route' }}",
+           "rightValue": "",
+           "operator": {
+            "type": "boolean",
+            "operation": "true",
+            "singleValue": true
+           }
+          }
+         ],
+         "combinator": "and"
+        },
+        "options": {}
+       }
+      },
+      {
+       "id": "03c96654-1b90-5d68-bba8-19d420067e74",
+       "name": "의도 분류",
+       "type": "n8n-nodes-base.httpRequest",
+       "typeVersion": 4.2,
+       "position": [
+        660,
+        200
+       ],
+       "parameters": {
+        "method": "POST",
+        "url": "http://agent.aiops.svc:8080/route",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ text: $json.text }) }}",
+        "options": {
+         "timeout": 30000,
+         "response": {
+          "response": {
+           "fullResponse": true,
+           "neverError": true
+          }
+         }
+        }
+       },
+       "credentials": {
+        "httpHeaderAuth": {
+         "id": "kcagentapi000001",
+         "name": "agent API"
+        }
+       }
+      },
+      {
+       "id": "961e91c6-a6c6-58ad-b511-e780c484bfb9",
+       "name": "다음 단계",
+       "type": "n8n-nodes-base.code",
+       "typeVersion": 2,
+       "position": [
+        880,
+        200
+       ],
+       "parameters": {
+        "jsCode": "// /route 결과로 다음 단계를 정한다. investigate, query → 조사. 나머지는 바로 답장.\nconst ev = $('준비').item.json;\nconst res = $json;\nlet next = 'reply', reply = '', intent = 'error';\nif (res.statusCode === 200) {\n  intent = res.body.intent;\n  if (intent === 'investigate' || intent === 'query') next = 'investigate';\n  else if (intent === 'action_request') reply = '조치 실행은 조사 보고서의 승인 버튼으로만 할 수 있습니다 (승인 흐름 준비 중). 먼저 무엇이 문제인지 물어봐 주세요.';\n  else if (intent === 'mlops') reply = '재학습과 모델 승격은 MLOps 단계에서 붙습니다.';\n  else reply = res.body.reply || '네.';\n} else if (res.statusCode === 429) {\n  reply = '오늘 AI 사용 예산을 다 썼습니다. 내일 다시 시도해 주세요.';\n} else {\n  reply = `요청을 처리하지 못했습니다 (agent ${res.statusCode ?? '연결 실패'}).`;\n}\nreturn [{ json: { ...ev, intent, next, reply, question: ev.text, route_cost: res.body?.usage?.cost_usd ?? 0 } }];"
+       }
+      },
+      {
+       "id": "a68b3757-3854-5917-8cdc-d36185b844a8",
+       "name": "조사?",
+       "type": "n8n-nodes-base.if",
+       "typeVersion": 2.2,
+       "position": [
+        1100,
+        200
+       ],
+       "parameters": {
+        "conditions": {
+         "options": {
+          "caseSensitive": true,
+          "leftValue": "",
+          "typeValidation": "loose",
+          "version": 2
+         },
+         "conditions": [
+          {
+           "id": "a65a2eb5-ad7a-5459-8899-36306f7074d3",
+           "leftValue": "={{ $json.next === 'investigate' }}",
+           "rightValue": "",
+           "operator": {
+            "type": "boolean",
+            "operation": "true",
+            "singleValue": true
+           }
+          }
+         ],
+         "combinator": "and"
+        },
+        "options": {}
+       }
+      },
+      {
+       "id": "3871611d-91d3-537d-b7bb-c71a086742c8",
+       "name": "조사 시작 (WF-02)",
+       "type": "n8n-nodes-base.executeWorkflow",
+       "typeVersion": 1.2,
+       "position": [
+        1320,
+        100
+       ],
+       "parameters": {
+        "workflowId": {
+         "__rl": true,
+         "value": "kcwf02investig01",
+         "mode": "id"
+        },
+        "options": {
+         "waitForSubWorkflow": false
+        }
+       }
+      },
+      {
+       "id": "07602b23-487f-5dac-ac54-e13ea426b1ff",
+       "name": "답장 정리",
+       "type": "n8n-nodes-base.code",
+       "typeVersion": 2,
+       "position": [
+        1320,
+        400
+       ],
+       "parameters": {
+        "jsCode": "// 두 갈래(권한/형식 답장, /route 답장)에서 온 항목을 같은 모양으로\nconst it = $json;\nconst result = it.role === 'none' ? 'denied' : (it.intent ? `reply:${it.intent}` : 'reply');\nreturn [{ json: { ...it, result } }];"
+       }
+      },
+      {
+       "id": "f137bce9-b30f-5e28-bf17-584653463d4d",
+       "name": "답장",
+       "type": "n8n-nodes-base.httpRequest",
+       "typeVersion": 4.2,
+       "position": [
+        1540,
+        400
+       ],
+       "parameters": {
+        "method": "POST",
+        "url": "http://chat-gateway.aiops.svc:8080/slack/post",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ channel: $json.channel_id, thread_ts: $json.thread_id, text: $json.reply }) }}",
+        "options": {
+         "timeout": 30000,
+         "response": {
+          "response": {
+           "fullResponse": true,
+           "neverError": true
+          }
+         }
+        }
+       },
+       "credentials": {
+        "httpHeaderAuth": {
+         "id": "kcgatewayapi0001",
+         "name": "chat-gateway API"
+        }
+       }
+      },
+      {
+       "id": "03c08af8-19c1-5600-95cc-d85ca18092c0",
+       "name": "감사 기록",
+       "type": "n8n-nodes-base.code",
+       "typeVersion": 2,
+       "position": [
+        1760,
+        400
+       ],
+       "parameters": {
+        "jsCode": "return [{ json: { flow: 'wf-01-intake', result: $('답장 정리').item.json.result, user_id: $('답장 정리').item.json.user_id,\n  role: $('답장 정리').item.json.role, channel_id: $('답장 정리').item.json.channel_id, thread_id: $('답장 정리').item.json.thread_id,\n  intent: $('답장 정리').item.json.intent ?? null, slack_status: $json.statusCode, execution_id: $execution.id } }];"
+       }
+      },
+      {
+       "id": "0674d648-e17c-52d5-9274-e16bbcb4fb77",
+       "name": "감사 (WF-99)",
+       "type": "n8n-nodes-base.executeWorkflow",
+       "typeVersion": 1.2,
+       "position": [
+        1980,
+        400
+       ],
+       "parameters": {
+        "workflowId": {
+         "__rl": true,
+         "value": "kcwf99audit00001",
+         "mode": "id"
+        },
+        "options": {
+         "waitForSubWorkflow": false
+        }
+       }
+      }
+     ],
+     "connections": {
+      "Slack 이벤트": {
+       "main": [
+        [
+         {
+          "node": "준비",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
+      "준비": {
+       "main": [
+        [
+         {
+          "node": "분류 필요?",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
+      "분류 필요?": {
+       "main": [
+        [
+         {
+          "node": "의도 분류",
+          "type": "main",
+          "index": 0
+         }
+        ],
+        [
+         {
+          "node": "답장 정리",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
+      "의도 분류": {
+       "main": [
+        [
+         {
+          "node": "다음 단계",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
+      "다음 단계": {
+       "main": [
+        [
+         {
+          "node": "조사?",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
+      "조사?": {
+       "main": [
+        [
+         {
+          "node": "조사 시작 (WF-02)",
+          "type": "main",
+          "index": 0
+         }
+        ],
+        [
+         {
+          "node": "답장 정리",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
+      "답장 정리": {
+       "main": [
+        [
+         {
+          "node": "답장",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
+      "답장": {
+       "main": [
+        [
+         {
+          "node": "감사 기록",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
+      "감사 기록": {
+       "main": [
+        [
+         {
+          "node": "감사 (WF-99)",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      }
+     },
+     "settings": {
+      "executionOrder": "v1",
+      "saveDataSuccessExecution": "all",
+      "saveDataErrorExecution": "all",
+      "errorWorkflow": "kcwf99audit00001"
+     },
+     "pinData": {},
+     "tags": []
+    }
+  wf-02-investigate.json: |
+    {
+     "id": "kcwf02investig01",
+     "name": "WF-02 investigate (조사와 보고)",
+     "active": true,
+     "nodes": [
+      {
+       "id": "1789572e-78be-548d-9c90-15ad82ac1b6b",
+       "name": "WF-01 에서 호출",
+       "type": "n8n-nodes-base.executeWorkflowTrigger",
+       "typeVersion": 1.1,
+       "position": [
+        0,
+        100
+       ],
+       "parameters": {
+        "inputSource": "passthrough"
+       }
+      },
+      {
+       "id": "1fb4d81f-3acc-525e-a9f3-3af8b7f7b2b5",
+       "name": "Alertmanager",
+       "type": "n8n-nodes-base.webhook",
+       "typeVersion": 2,
+       "position": [
+        0,
+        400
+       ],
+       "parameters": {
+        "httpMethod": "POST",
+        "path": "alert",
+        "authentication": "headerAuth",
+        "responseMode": "onReceived",
+        "options": {}
+       },
+       "credentials": {
+        "httpHeaderAuth": {
+         "id": "kchookalert00001",
+         "name": "webhook: alertmanager"
+        }
+       },
+       "webhookId": "a38d5324-ad15-52ca-a653-d34ad849802f"
+      },
+      {
+       "id": "b260a549-11a1-5267-9a23-cca77aea7294",
+       "name": "알림 정리",
+       "type": "n8n-nodes-base.code",
+       "typeVersion": 2,
+       "position": [
+        220,
+        400
+       ],
+       "parameters": {
+        "jsCode": "// Alertmanager webhook (그룹 하나 = 요청 하나). firing 알림만 조사한다.\nconst g = $json.body ?? {};\nconst firing = (g.alerts ?? []).filter(a => a.status === 'firing');\nif (!firing.length) return [];\nconst a = firing[0];\nconst name = a.labels?.alertname ?? 'alert';\nconst summary = a.annotations?.summary ?? '';\nconst lines = firing.map(x => `• ${x.labels?.alertname} ${x.labels?.pod ?? x.labels?.service ?? ''} ${x.annotations?.summary ?? ''}`.trim());\nreturn [{ json: {\n  title: `:rotating_light: *${name}* (${firing.length}건) ${summary}`,\n  detail: lines.join('\\n').slice(0, 2500),\n  question: `알림 '${name}' 이(가) 발생했다. ${summary} 원인을 조사해줘.`,\n  alert: { status: g.status, commonLabels: g.commonLabels, commonAnnotations: g.commonAnnotations,\n           alerts: firing.slice(0, 5).map(x => ({ labels: x.labels, annotations: x.annotations, startsAt: x.startsAt })) },\n} }];"
+       }
+      },
+      {
+       "id": "658d2cac-e386-59fa-8546-1acab793297c",
+       "name": "알림 글 올리기",
+       "type": "n8n-nodes-base.httpRequest",
+       "typeVersion": 4.2,
+       "position": [
+        440,
+        400
+       ],
+       "parameters": {
+        "method": "POST",
+        "url": "http://chat-gateway.aiops.svc:8080/slack/post",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ text: $json.title + '\\n' + $json.detail }) }}",
+        "options": {
+         "timeout": 30000,
+         "response": {
+          "response": {
+           "fullResponse": true,
+           "neverError": true
+          }
+         }
+        }
+       },
+       "credentials": {
+        "httpHeaderAuth": {
+         "id": "kcgatewayapi0001",
+         "name": "chat-gateway API"
+        }
+       }
+      },
+      {
+       "id": "1524dc70-ff00-58d6-81b2-b89cd9f7cd17",
+       "name": "알림 스레드",
+       "type": "n8n-nodes-base.code",
+       "typeVersion": 2,
+       "position": [
+        660,
+        400
+       ],
+       "parameters": {
+        "jsCode": "const p = $('알림 정리').item.json;\nif ($json.statusCode !== 200) throw new Error(`알림 글 올리기 실패: ${$json.statusCode} ${JSON.stringify($json.body).slice(0, 200)}`);\nreturn [{ json: { channel_id: $json.body.channel, thread_id: $json.body.ts, question: p.question, alert: p.alert,\n  user_id: 'alertmanager', role: 'system', source: 'alert', started_at: Date.now() } }];"
+       }
+      },
+      {
+       "id": "d63b2728-99a0-5aaa-9def-e735e442ca52",
+       "name": "조사 요청",
+       "type": "n8n-nodes-base.code",
+       "typeVersion": 2,
+       "position": [
+        880,
+        200
+       ],
+       "parameters": {
+        "jsCode": "// 두 입구(WF-01, 알림)를 같은 모양으로. agent 의 thread_id 는 Slack 채널 + 스레드 → 후속 질문이 이어진다.\nconst it = $json;\nreturn [{ json: { channel_id: it.channel_id, thread_id: it.thread_id, question: it.question, alert: it.alert ?? null,\n  user_id: it.user_id, role: it.role, source: it.source ?? 'chat', started_at: it.started_at ?? Date.now(),\n  agent_thread: `slack-${it.channel_id}-${it.thread_id}` } }];"
+       }
+      },
+      {
+       "id": "49a9d321-f5af-586a-a720-3d72208381cd",
+       "name": "조사 중 표시",
+       "type": "n8n-nodes-base.httpRequest",
+       "typeVersion": 4.2,
+       "position": [
+        1100,
+        200
+       ],
+       "parameters": {
+        "method": "POST",
+        "url": "http://chat-gateway.aiops.svc:8080/slack/post",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ channel: $json.channel_id, thread_ts: $json.thread_id, text: ':mag: 조사하고 있습니다. 보통 30~60초 걸립니다.' }) }}",
+        "options": {
+         "timeout": 30000,
+         "response": {
+          "response": {
+           "fullResponse": true,
+           "neverError": true
+          }
+         }
+        }
+       },
+       "credentials": {
+        "httpHeaderAuth": {
+         "id": "kcgatewayapi0001",
+         "name": "chat-gateway API"
+        }
+       }
+      },
+      {
+       "id": "c26fd410-03ae-52f9-9c7c-a097b57bd786",
+       "name": "조사",
+       "type": "n8n-nodes-base.httpRequest",
+       "typeVersion": 4.2,
+       "position": [
+        1320,
+        200
+       ],
+       "parameters": {
+        "method": "POST",
+        "url": "http://agent.aiops.svc:8080/investigate",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ thread_id: $('조사 요청').item.json.agent_thread, question: $('조사 요청').item.json.question, alert: $('조사 요청').item.json.alert }) }}",
+        "options": {
+         "timeout": 240000,
+         "response": {
+          "response": {
+           "fullResponse": true,
+           "neverError": true
+          }
+         }
+        }
+       },
+       "credentials": {
+        "httpHeaderAuth": {
+         "id": "kcagentapi000001",
+         "name": "agent API"
+        }
+       }
+      },
+      {
+       "id": "ecb553b4-9dd9-58fa-bb20-2cb14578728a",
+       "name": "보고서 만들기",
+       "type": "n8n-nodes-base.code",
+       "typeVersion": 2,
+       "position": [
+        1540,
+        200
+       ],
+       "parameters": {
+        "jsCode": "// agent 보고서 → Slack 블록\nconst req = $('조사 요청').item.json;\nconst res = $json;\nconst secs = Math.round((Date.now() - req.started_at) / 1000);\nconst clip = (s, n) => (s ?? '').length > n ? s.slice(0, n - 1) + '…' : (s ?? '');\nlet blocks = [], text, result;\nif (res.statusCode === 200 && res.body?.report) {\n  const r = res.body.report, u = res.body.usage ?? {};\n  result = 'ok';\n  text = clip(r.summary, 300);\n  blocks.push({ type: 'section', text: { type: 'mrkdwn', text: clip(`*조사 결과*\\n${r.summary}`, 2900) } });\n  if (r.causes?.length) {\n    const lines = r.causes.map((c, i) => `${i + 1}. *${c.title}* (신뢰도 ${Math.round((c.confidence ?? 0) * 100)}%)\\n` +\n      (c.evidence ?? []).slice(0, 4).map(e => `    · ${e}`).join('\\n'));\n    blocks.push({ type: 'section', text: { type: 'mrkdwn', text: clip(`*원인 후보*\\n${lines.join('\\n')}`, 2900) } });\n  }\n  const acts = (r.actions ?? []).filter(a => a.type !== 'none');\n  if (acts.length) {\n    const lines = acts.map(a => `• \\`${a.type}\\` ${a.target} (위험: ${a.risk}) ${a.reason}`);\n    blocks.push({ type: 'section', text: { type: 'mrkdwn', text: clip(`*제안 조치* (실행하지 않았습니다)\\n${lines.join('\\n')}`, 2900) } });\n  }\n  if (r.data_gaps?.length) {\n    blocks.push({ type: 'context', elements: [{ type: 'mrkdwn', text: clip(`더 확인할 것: ${r.data_gaps.join(' / ')}`, 2900) }] });\n  }\n  blocks.push({ type: 'context', elements: [{ type: 'mrkdwn',\n    text: `도구 ${res.body.tool_calls ?? 0}회 · LLM ${u.llm_calls ?? 0}회 · $${(u.cost_usd ?? 0).toFixed(3)} · ${secs}초` +\n          (res.body.stopped_by && res.body.stopped_by !== 'done' ? ` · 한도 도달로 중단(${res.body.stopped_by})` : '') }] });\n} else if (res.statusCode === 429) {\n  result = 'budget'; text = '오늘 AI 사용 예산을 다 써서 조사하지 못했습니다.';\n} else {\n  result = 'error'; text = `조사에 실패했습니다 (agent ${res.statusCode ?? '연결 실패'}). 잠시 후 다시 시도해 주세요.`;\n}\nreturn [{ json: { channel: req.channel_id, ts: $('조사 중 표시').item.json.body?.ts, text, blocks: blocks.length ? blocks : null,\n  audit: { flow: 'wf-02-investigate', result, source: req.source, user_id: req.user_id, role: req.role,\n    channel_id: req.channel_id, thread_id: req.thread_id, seconds: secs, agent_status: res.statusCode,\n    cost_usd: res.body?.usage?.cost_usd ?? 0, tool_calls: res.body?.tool_calls ?? 0, stopped_by: res.body?.stopped_by ?? null } } }];"
+       }
+      },
+      {
+       "id": "bf75a1bc-7ebc-517d-8554-9b7e0a5b03ce",
+       "name": "결과 올리기",
+       "type": "n8n-nodes-base.httpRequest",
+       "typeVersion": 4.2,
+       "position": [
+        1760,
+        200
+       ],
+       "parameters": {
+        "method": "POST",
+        "url": "http://chat-gateway.aiops.svc:8080/slack/update",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ channel: $json.channel, ts: $json.ts, text: $json.text, blocks: $json.blocks }) }}",
+        "options": {
+         "timeout": 30000,
+         "response": {
+          "response": {
+           "fullResponse": true,
+           "neverError": true
+          }
+         }
+        }
+       },
+       "credentials": {
+        "httpHeaderAuth": {
+         "id": "kcgatewayapi0001",
+         "name": "chat-gateway API"
+        }
+       }
+      },
+      {
+       "id": "48810e47-0a41-5279-be40-203e257553ec",
+       "name": "감사 기록",
+       "type": "n8n-nodes-base.code",
+       "typeVersion": 2,
+       "position": [
+        1980,
+        200
+       ],
+       "parameters": {
+        "jsCode": "return [{ json: { ...$('보고서 만들기').item.json.audit, slack_status: $json.statusCode, execution_id: $execution.id } }];"
+       }
+      },
+      {
+       "id": "946cf17a-b170-5426-b6a4-f5e6398d1285",
+       "name": "감사 (WF-99)",
+       "type": "n8n-nodes-base.executeWorkflow",
+       "typeVersion": 1.2,
+       "position": [
+        2200,
+        200
+       ],
+       "parameters": {
+        "workflowId": {
+         "__rl": true,
+         "value": "kcwf99audit00001",
+         "mode": "id"
+        },
+        "options": {
+         "waitForSubWorkflow": false
+        }
+       }
+      }
+     ],
+     "connections": {
+      "WF-01 에서 호출": {
+       "main": [
+        [
+         {
+          "node": "조사 요청",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
+      "Alertmanager": {
+       "main": [
+        [
+         {
+          "node": "알림 정리",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
+      "알림 정리": {
+       "main": [
+        [
+         {
+          "node": "알림 글 올리기",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
+      "알림 글 올리기": {
+       "main": [
+        [
+         {
+          "node": "알림 스레드",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
+      "알림 스레드": {
+       "main": [
+        [
+         {
+          "node": "조사 요청",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
+      "조사 요청": {
+       "main": [
+        [
+         {
+          "node": "조사 중 표시",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
+      "조사 중 표시": {
+       "main": [
+        [
+         {
+          "node": "조사",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
+      "조사": {
+       "main": [
+        [
+         {
+          "node": "보고서 만들기",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
+      "보고서 만들기": {
+       "main": [
+        [
+         {
+          "node": "결과 올리기",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
+      "결과 올리기": {
+       "main": [
+        [
+         {
+          "node": "감사 기록",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
+      "감사 기록": {
+       "main": [
+        [
+         {
+          "node": "감사 (WF-99)",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      }
+     },
+     "settings": {
+      "executionOrder": "v1",
+      "saveDataSuccessExecution": "all",
+      "saveDataErrorExecution": "all",
+      "errorWorkflow": "kcwf99audit00001"
+     },
+     "pinData": {},
+     "tags": []
+    }
+  wf-99-audit.json: |
+    {
+     "id": "kcwf99audit00001",
+     "name": "WF-99 audit (감사 로그)",
+     "active": true,
+     "nodes": [
+      {
+       "id": "c95c94b2-ff33-5115-a9cd-db495e14877a",
+       "name": "다른 흐름에서 호출",
+       "type": "n8n-nodes-base.executeWorkflowTrigger",
+       "typeVersion": 1.1,
+       "position": [
+        0,
+        100
+       ],
+       "parameters": {
+        "inputSource": "passthrough"
+       }
+      },
+      {
+       "id": "944cb904-f42e-5072-ab14-93d7fd4101b9",
+       "name": "흐름 실패",
+       "type": "n8n-nodes-base.errorTrigger",
+       "typeVersion": 1,
+       "position": [
+        0,
+        300
+       ],
+       "parameters": {}
+      },
+      {
+       "id": "3758929c-dcc2-5296-b03e-1f5a010f8c11",
+       "name": "오류 정리",
+       "type": "n8n-nodes-base.code",
+       "typeVersion": 2,
+       "position": [
+        220,
+        300
+       ],
+       "parameters": {
+        "jsCode": "// 다른 워크플로가 실패하면 여기로 온다 (워크플로 설정의 Error Workflow)\nconst e = $json;\nreturn [{ json: { flow: e.workflow?.name ?? 'unknown', result: 'error', execution_id: e.execution?.id ?? null,\n  failed_node: e.execution?.lastNodeExecuted ?? null, error: (e.execution?.error?.message ?? '').slice(0, 500) } }];"
+       }
+      },
+      {
+       "id": "8149d021-9777-5fd2-be62-ef61388ac78e",
+       "name": "감사 로그 보내기",
+       "type": "n8n-nodes-base.httpRequest",
+       "typeVersion": 4.2,
+       "position": [
+        440,
+        200
+       ],
+       "parameters": {
+        "method": "POST",
+        "url": "http://chat-gateway.aiops.svc:8080/audit",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ ...$json, at: new Date().toISOString() }) }}",
+        "options": {
+         "timeout": 10000,
+         "response": {
+          "response": {
+           "fullResponse": true,
+           "neverError": true
+          }
+         }
+        }
+       },
+       "credentials": {
+        "httpHeaderAuth": {
+         "id": "kcgatewayapi0001",
+         "name": "chat-gateway API"
+        }
+       }
+      }
+     ],
+     "connections": {
+      "다른 흐름에서 호출": {
+       "main": [
+        [
+         {
+          "node": "감사 로그 보내기",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
+      "흐름 실패": {
+       "main": [
+        [
+         {
+          "node": "오류 정리",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
+      "오류 정리": {
+       "main": [
+        [
+         {
+          "node": "감사 로그 보내기",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      }
+     },
+     "settings": {
+      "executionOrder": "v1",
+      "saveDataSuccessExecution": "all",
+      "saveDataErrorExecution": "all"
+     },
+     "pinData": {},
+     "tags": []
+    }

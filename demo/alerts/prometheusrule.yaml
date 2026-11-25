@@ -1,0 +1,42 @@
+# demo-app 알림 규칙. Prometheus 는 release=kube-prometheus 라벨이 있는 규칙만 읽는다.
+# 알림이 뜨면 아래 AlertmanagerConfig 가 n8n(WF-02)으로 보내고, 에이전트가 조사해 Slack 스레드에 보고한다.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: demo-app
+  namespace: demo
+  labels: { release: kube-prometheus, app.kubernetes.io/part-of: kube-chatops }
+spec:
+  groups:
+    - name: demo-app
+      rules:
+        - alert: DemoHighErrorRate
+          # 5xx 비율. 장애 주입 API(/chaos/*)와 메트릭 수집 경로는 뺀다
+          expr: |
+            sum(rate(http_requests_total{namespace="demo", path!~"/chaos/.*|/metrics|/healthz.*", status=~"5.."}[2m]))
+              / sum(rate(http_requests_total{namespace="demo", path!~"/chaos/.*|/metrics|/healthz.*"}[2m])) > 0.05
+          for: 2m
+          labels: { severity: warning, kube_chatops: "true" }
+          annotations:
+            summary: "demo-app 5xx 비율이 5%를 넘었습니다 (현재 {{ $value | humanizePercentage }})"
+        - alert: DemoHighLatency
+          expr: |
+            histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{namespace="demo", path!~"/chaos/.*|/metrics|/healthz.*"}[5m]))) > 0.5
+          for: 3m
+          labels: { severity: warning, kube_chatops: "true" }
+          annotations:
+            summary: "demo-app p95 응답 시간이 500ms 를 넘었습니다 (현재 {{ $value | humanizeDuration }})"
+        - alert: DemoMemoryNearLimit
+          # kubelet 메트릭이 두 Service 로 중복 수집되고 있어 max by (pod) 로 하나만 본다
+          expr: |
+            max by (pod) (container_memory_working_set_bytes{namespace="demo", container="app"})
+              / max by (pod) (kube_pod_container_resource_limits{namespace="demo", container="app", resource="memory"}) > 0.8
+          for: 2m
+          labels: { severity: warning, kube_chatops: "true" }
+          annotations:
+            summary: "{{ $labels.pod }} 메모리가 limit 의 80%를 넘었습니다 ({{ $value | humanizePercentage }})"
+        - alert: DemoPodRestarting
+          expr: max by (pod) (increase(kube_pod_container_status_restarts_total{namespace="demo"}[10m])) >= 1
+          labels: { severity: warning, kube_chatops: "true" }
+          annotations:
+            summary: "{{ $labels.pod }} 가 최근 10분 안에 재시작했습니다"
