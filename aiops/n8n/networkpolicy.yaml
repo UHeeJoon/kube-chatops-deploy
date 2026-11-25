@@ -1,0 +1,39 @@
+# n8n
+# 들어옴: aiops 내부(chat-gateway 등), monitoring(Alertmanager webhook, 스크레이프는 기준선), admin-gateway.
+# 나감: aiops 내부(DB, agent), 외부 HTTPS(Slack 등). 클러스터 안 다른 네임스페이스는 필요할 때 추가한다.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: n8n, namespace: aiops }
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/name: n8n }
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector: {}
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: monitoring }
+      ports:
+        - { port: 5678, protocol: TCP }
+  egress:
+    - to:
+        - podSelector: {}
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16]
+      ports:
+        - { port: 443, protocol: TCP }
+---
+# Cilium Gateway 트래픽은 예약 신원 ingress 로 들어온다 (네임스페이스 셀렉터로는 안 잡힘)
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata: { name: n8n-gateway, namespace: aiops }
+spec:
+  endpointSelector:
+    matchLabels: { app.kubernetes.io/name: n8n }
+  ingress:
+    - fromEntities: [ingress]
+      toPorts:
+        - ports:
+            - { port: "5678", protocol: TCP }

@@ -1,0 +1,38 @@
+# aiops-pg: CNPG 오퍼레이터(상태 확인 8000)와 aiops 네임스페이스 앱(5432)만 받는다.
+# 인스턴스 매니저는 kube-apiserver 를 호출한다 (Cilium 은 apiserver 를 예약 신원으로 보므로 CiliumNetworkPolicy 로 허용).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: aiops-pg, namespace: aiops }
+spec:
+  podSelector:
+    matchLabels: { cnpg.io/cluster: aiops-pg }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: cnpg-system }
+      ports:
+        - { port: 8000, protocol: TCP }
+        - { port: 5432, protocol: TCP }
+    - from:
+        - podSelector: {}
+      ports:
+        - { port: 5432, protocol: TCP }
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata: { name: aiops-pg-apiserver, namespace: aiops }
+spec:
+  endpointSelector:
+    matchLabels: { cnpg.io/cluster: aiops-pg }
+  egress:
+    - toEntities: [kube-apiserver]
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata: { name: aiops-pg, namespace: aiops }
+spec:
+  selector:
+    matchLabels: { cnpg.io/cluster: aiops-pg }
+  podMetricsEndpoints:
+    - { port: metrics }

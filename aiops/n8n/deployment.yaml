@@ -1,0 +1,79 @@
+# n8n: 승인 흐름과 실행(감사 로그 포함)을 맡는다. 상태는 aiops-pg 의 n8n DB 에 둔다.
+# 인스턴스 1개 (queue 모드 아님) → Recreate.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: n8n
+  namespace: aiops
+  labels: { app.kubernetes.io/name: n8n, app.kubernetes.io/part-of: kube-chatops }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels: { app.kubernetes.io/name: n8n }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: n8n, app.kubernetes.io/part-of: kube-chatops }
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: n8n
+          image: docker.io/n8nio/n8n:2.49.6@sha256:a1a9955a4a9e5dd9fa65a62f59e0751351b45b9e5cd2c17e6e330a8d0026cad8
+          ports:
+            - { name: http, containerPort: 5678 }
+          env:
+            - { name: DB_TYPE, value: postgresdb }
+            - { name: DB_POSTGRESDB_HOST, value: aiops-pg-rw.aiops.svc }
+            - { name: DB_POSTGRESDB_PORT, value: "5432" }
+            - { name: DB_POSTGRESDB_DATABASE, value: n8n }
+            - name: DB_POSTGRESDB_USER
+              valueFrom: { secretKeyRef: { name: aiops-pg-n8n, key: username } }
+            - name: DB_POSTGRESDB_PASSWORD
+              valueFrom: { secretKeyRef: { name: aiops-pg-n8n, key: password } }
+            - name: N8N_ENCRYPTION_KEY
+              valueFrom: { secretKeyRef: { name: n8n, key: encryption_key } }
+            - { name: N8N_HOST, value: n8n.ascode.click }
+            - { name: N8N_PROTOCOL, value: http }
+            - { name: WEBHOOK_URL, value: "http://n8n.ascode.click/" }
+            - { name: N8N_PROXY_HOPS, value: "1" }
+            - { name: N8N_SECURE_COOKIE, value: "false" } # admin-gateway 가 HTTP 라서. TLS 붙이면 지운다
+            - { name: GENERIC_TIMEZONE, value: Asia/Seoul }
+            - { name: TZ, value: Asia/Seoul }
+            - { name: N8N_METRICS, value: "true" }
+            - { name: N8N_DIAGNOSTICS_ENABLED, value: "false" }
+            - { name: N8N_VERSION_NOTIFICATIONS_ENABLED, value: "false" }
+            - { name: N8N_PERSONALIZATION_ENABLED, value: "false" }
+            - { name: N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS, value: "true" }
+            - { name: EXECUTIONS_DATA_PRUNE, value: "true" }
+            - { name: EXECUTIONS_DATA_MAX_AGE, value: "336" } # 14일
+          resources:
+            requests: { cpu: 100m, memory: 384Mi }
+            limits: { memory: 1Gi }
+          startupProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet: { path: /healthz/readiness, port: http }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 20
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: home, mountPath: /home/node/.n8n }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - { name: home, emptyDir: { sizeLimit: 256Mi } }
+        - { name: tmp, emptyDir: { sizeLimit: 256Mi } }

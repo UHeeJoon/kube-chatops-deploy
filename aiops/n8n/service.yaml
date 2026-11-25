@@ -1,0 +1,34 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: n8n
+  namespace: aiops
+  labels: { app.kubernetes.io/name: n8n }
+spec:
+  selector: { app.kubernetes.io/name: n8n }
+  ports:
+    - { name: http, port: 5678, targetPort: http }
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: n8n
+  namespace: aiops
+spec:
+  parentRefs:
+    - { name: admin-gateway, namespace: ingress }
+  hostnames: [n8n.ascode.click]
+  rules:
+    - backendRefs:
+        - { name: n8n, port: 5678 }
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: n8n
+  namespace: aiops
+spec:
+  selector:
+    matchLabels: { app.kubernetes.io/name: n8n }
+  endpoints:
+    - { port: http, path: /metrics, interval: 30s }
