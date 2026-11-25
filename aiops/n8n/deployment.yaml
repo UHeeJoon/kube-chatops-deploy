@@ -50,8 +50,9 @@ spec:
               n8n import:credentials --input=/import/credentials.json
               rm -f /import/credentials.json
               n8n import:workflow --separate --input=/workflows
-              # 단일 인스턴스 모드에서는 import 가 활성화를 못 한다 → JSON 에 active: true 인 것만 게시(publish)
-              for f in /workflows/*.json; do
+              # 단일 인스턴스 모드에서는 import 가 활성화를 못 한다 → JSON 에 active: true 인 것만 게시(publish).
+              # 하위 워크플로가 먼저 게시돼 있어야 해서 번호 역순(99 → 02 → 01)으로 한다
+              for f in $(ls /workflows/*.json | sort -r); do
                 id=$(node -e 'const w = require(process.argv[1]); if (w.active) console.log(w.id)' "$f")
                 [ -n "$id" ] && n8n publish:workflow --id="$id"
               done
