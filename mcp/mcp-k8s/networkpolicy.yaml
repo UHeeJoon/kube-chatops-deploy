@@ -1,0 +1,27 @@
+# mcp-k8s
+# 들어옴: aiops ns(agent) 의 8080 만. 메트릭 스크레이프(monitoring) 는 테넌트 기준선 platform-baseline 이 허용.
+# 나감: kube-apiserver 만 (Cilium 예약 신원). DNS 는 기준선이 허용.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: mcp-k8s, namespace: mcp }
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/name: mcp-k8s }
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: aiops }
+      ports:
+        - { port: 8080, protocol: TCP }
+  egress: [] # API 서버는 아래 CiliumNetworkPolicy 로 허용
+---
+# API 서버는 파드가 아니라서 NetworkPolicy 로 고를 수 없다 → Cilium 예약 신원 kube-apiserver
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata: { name: mcp-k8s-apiserver, namespace: mcp }
+spec:
+  endpointSelector:
+    matchLabels: { app.kubernetes.io/name: mcp-k8s }
+  egress:
+    - toEntities: [kube-apiserver]

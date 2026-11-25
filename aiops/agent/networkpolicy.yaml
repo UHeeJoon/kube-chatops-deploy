@@ -1,0 +1,58 @@
+# agent
+# 들어옴: aiops 내부(n8n) 의 8080. 스크레이프는 기준선이 허용.
+# 나감: aiops-pg(5432), mcp ns(8080), Tempo(4317), api.anthropic.com(443, 아래 Cilium FQDN 정책). 그 외 외부 차단.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: agent, namespace: aiops }
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/name: agent }
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector: {}
+      ports:
+        - { port: 8080, protocol: TCP }
+  egress:
+    - to:
+        - podSelector:
+            matchLabels: { cnpg.io/cluster: aiops-pg }
+      ports:
+        - { port: 5432, protocol: TCP }
+    - to:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: mcp }
+      ports:
+        - { port: 8080, protocol: TCP }
+    - to:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: monitoring }
+          podSelector:
+            matchLabels: { app.kubernetes.io/name: tempo }
+      ports:
+        - { port: 4317, protocol: TCP }
+---
+# Claude API 만 이름으로 허용. Cilium DNS 프록시가 kube-dns 응답을 보고 api.anthropic.com 의 IP 만 열어 준다.
+# (IP 대역으로 열면 같은 CDN 의 다른 사이트까지 열린다)
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata: { name: agent-anthropic, namespace: aiops }
+spec:
+  endpointSelector:
+    matchLabels: { app.kubernetes.io/name: agent }
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - { port: "53", protocol: ANY }
+          rules:
+            dns:
+              - matchPattern: "*"
+    - toFQDNs:
+        - matchName: api.anthropic.com
+      toPorts:
+        - ports:
+            - { port: "443", protocol: TCP }

@@ -1,0 +1,28 @@
+# mcp-k8s(mcp ns) 가 demo ns 를 읽을 수 있는 최소 권한. get/list 만, secrets·configmaps·pods/log·exec 없음.
+# Role 은 대상 ns(demo) 에 있어야 하므로 이 폴더에 둔다 (App: kube-chatops-demo-mcp-reader). ClusterRole 은 쓰지 않는다.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: mcp-reader
+  namespace: demo
+rules:
+  - apiGroups: [""]
+    resources: [pods, events]
+    verbs: [get, list]
+  - apiGroups: [apps]
+    resources: [deployments, replicasets]
+    verbs: [get, list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: mcp-reader
+  namespace: demo
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: mcp-reader
+subjects:
+  - kind: ServiceAccount
+    name: mcp-k8s
+    namespace: mcp

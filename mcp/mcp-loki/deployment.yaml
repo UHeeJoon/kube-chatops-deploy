@@ -1,0 +1,78 @@
+# mcp-loki: Loki 로그 조회. 읽기 전용 MCP 서버 (Streamable HTTP :8080/mcp, 메트릭 :9090).
+# 호출자는 aiops 의 agent 뿐이다 (Bearer 토큰 + networkpolicy).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mcp-loki
+  namespace: mcp
+  labels: { app.kubernetes.io/name: mcp-loki, app.kubernetes.io/part-of: kube-chatops }
+  annotations:
+    reloader.stakater.com/auto: "true" # Reloader 설치 후 토큰이 바뀌면 자동 재시작
+spec:
+  replicas: 1
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels: { app.kubernetes.io/name: mcp-loki }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: mcp-loki, app.kubernetes.io/part-of: kube-chatops }
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: app
+          image: ghcr.io/uheejoon/kube-chatops/mcp-loki@sha256:dd4f6e98a80ed52332cbf34093c4d19e261985fa464e42749388835d0ce91740
+          ports:
+            - { name: http, containerPort: 8080 }
+            - { name: metrics, containerPort: 9090 }
+          env:
+            - name: MCP_TOKEN
+              valueFrom: { secretKeyRef: { name: mcp-loki, key: token } }
+            - { name: ALLOWED_NAMESPACES, value: demo }
+            - name: POD_NAMESPACE
+              valueFrom: { fieldRef: { fieldPath: metadata.namespace } }
+            - { name: LOKI_URL, value: "http://loki.monitoring.svc:3100" }
+          resources:
+            requests: { cpu: 20m, memory: 96Mi }
+            limits: { memory: 256Mi }
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 20
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - { name: tmp, emptyDir: { sizeLimit: 64Mi } }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mcp-loki
+  namespace: mcp
+  labels: { app.kubernetes.io/name: mcp-loki }
+spec:
+  selector: { app.kubernetes.io/name: mcp-loki }
+  ports:
+    - { name: http, port: 8080, targetPort: http }
+    - { name: metrics, port: 9090, targetPort: metrics }
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: mcp-loki
+  namespace: mcp
+spec:
+  selector:
+    matchLabels: { app.kubernetes.io/name: mcp-loki }
+  endpoints:
+    - { port: metrics, path: /metrics, interval: 30s }

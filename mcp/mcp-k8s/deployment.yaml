@@ -1,0 +1,77 @@
+# mcp-k8s: 쿠버네티스 상태 조회 (demo ns Role 만, demo/mcp-reader). 읽기 전용 MCP 서버 (Streamable HTTP :8080/mcp, 메트릭 :9090).
+# 호출자는 aiops 의 agent 뿐이다 (Bearer 토큰 + networkpolicy).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mcp-k8s
+  namespace: mcp
+  labels: { app.kubernetes.io/name: mcp-k8s, app.kubernetes.io/part-of: kube-chatops }
+  annotations:
+    reloader.stakater.com/auto: "true" # Reloader 설치 후 토큰이 바뀌면 자동 재시작
+spec:
+  replicas: 1
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels: { app.kubernetes.io/name: mcp-k8s }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: mcp-k8s, app.kubernetes.io/part-of: kube-chatops }
+    spec:
+      serviceAccountName: mcp-k8s
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: app
+          image: ghcr.io/uheejoon/kube-chatops/mcp-k8s@sha256:6084b97373c6e04ce7c24ee16fe637f599e2b22b5da4db14c616a93fc2bc1e2f
+          ports:
+            - { name: http, containerPort: 8080 }
+            - { name: metrics, containerPort: 9090 }
+          env:
+            - name: MCP_TOKEN
+              valueFrom: { secretKeyRef: { name: mcp-k8s, key: token } }
+            - { name: ALLOWED_NAMESPACES, value: demo }
+            - name: POD_NAMESPACE
+              valueFrom: { fieldRef: { fieldPath: metadata.namespace } }
+          resources:
+            requests: { cpu: 20m, memory: 96Mi }
+            limits: { memory: 256Mi }
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 20
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - { name: tmp, emptyDir: { sizeLimit: 64Mi } }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mcp-k8s
+  namespace: mcp
+  labels: { app.kubernetes.io/name: mcp-k8s }
+spec:
+  selector: { app.kubernetes.io/name: mcp-k8s }
+  ports:
+    - { name: http, port: 8080, targetPort: http }
+    - { name: metrics, port: 9090, targetPort: metrics }
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: mcp-k8s
+  namespace: mcp
+spec:
+  selector:
+    matchLabels: { app.kubernetes.io/name: mcp-k8s }
+  endpoints:
+    - { port: metrics, path: /metrics, interval: 30s }
