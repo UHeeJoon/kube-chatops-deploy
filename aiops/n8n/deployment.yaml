@@ -42,8 +42,13 @@ spec:
                   ["kchookchat000001", "webhook: chat-gateway", "CHAT_WEBHOOK_TOKEN"],
                   ["kchookalert00001", "webhook: alertmanager", "ALERT_WEBHOOK_TOKEN"],
                 ];
-                const out = c.filter(([, , e]) => process.env[e]).map(([id, name, e]) =>
-                  ({ id, name, type: "httpHeaderAuth", data: { name: "Authorization", value: "Bearer " + process.env[e] } }));
+                // 토큰이 아직 없으면(예: Vault 에 알림 토큰 미등록) 무작위 값으로 만든다.
+                // 워크플로는 정상 게시되고, 그 webhook 은 진짜 토큰이 들어올 때까지 모든 요청을 거절한다.
+                const rnd = () => require("crypto").randomBytes(32).toString("hex");
+                const out = c.map(([id, name, e]) => {
+                  if (!process.env[e]) console.log("토큰 없음, 임시 값 사용:", name);
+                  return { id, name, type: "httpHeaderAuth", data: { name: "Authorization", value: "Bearer " + (process.env[e] || rnd()) } };
+                });
                 require("fs").writeFileSync("/import/credentials.json", JSON.stringify(out));
                 console.log("credentials:", out.map(x => x.name).join(", "));
               '
@@ -54,7 +59,8 @@ spec:
               # 하위 워크플로가 먼저 게시돼 있어야 해서 번호 역순(99 → 02 → 01)으로 한다
               for f in $(ls /workflows/*.json | sort -r); do
                 id=$(node -e 'const w = require(process.argv[1]); if (w.active) console.log(w.id)' "$f")
-                [ -n "$id" ] && n8n publish:workflow --id="$id"
+                # 게시가 실패해도 n8n 본체는 뜨게 한다 (화면과 기존 워크플로는 살아 있어야 함). 실패는 이 로그에 남는다
+                [ -n "$id" ] && { n8n publish:workflow --id="$id" || echo "경고: $id 게시 실패"; }
               done
           env:
             - { name: DB_TYPE, value: postgresdb }
