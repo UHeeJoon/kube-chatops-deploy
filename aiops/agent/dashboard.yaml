@@ -1,6 +1,6 @@
 # Grafana 대시보드: LLM 비용, 예산, 조사 결과, MCP 도구.
 # Grafana 사이드카가 모든 ns 에서 grafana_dashboard=1 라벨 ConfigMap 을 읽는다 (homelab 변경 불필요).
-# 수정은 Grafana 에서 하지 말고 이 파일에서 (사이드카가 덮어쓴다). 원본 생성기: kube-chatops-deploy 위키 "mcp 와 agent".
+# 수정은 Grafana 에서 하지 말고 이 파일에서 (사이드카가 덮어쓴다). 생성: python3 scripts/gen-agent-dashboard.py aiops/agent/dashboard.yaml
 apiVersion: v1
 kind: ConfigMap
 metadata:
