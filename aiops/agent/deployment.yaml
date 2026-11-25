@@ -39,7 +39,7 @@ spec:
             - name: PG_PASSWORD
               valueFrom: { secretKeyRef: { name: aiops-pg-agent, key: password } }
             - { name: MODEL, value: claude-opus-5-5 }
-            - { name: ROUTE_MODEL, value: claude-opus-5-5 }
+            - { name: ROUTE_MODEL, value: claude-haiku-5-5 }
             - { name: INVESTIGATE_EFFORT, value: medium }
             - { name: DAILY_BUDGET_USD, value: "5" }
             - { name: MAX_REQUEST_USD, value: "0.6" }
