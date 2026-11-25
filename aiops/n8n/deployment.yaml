@@ -19,6 +19,7 @@ spec:
         kube-chatops/workflows-sha: 8345fd441b157e0c
     spec:
       automountServiceAccountToken: false
+      enableServiceLinks: false # Service 이름이 n8n 이라 N8N_PORT=tcp://... 환경 변수가 생겨 n8n 설정과 충돌한다
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
@@ -48,7 +49,12 @@ spec:
               '
               n8n import:credentials --input=/import/credentials.json
               rm -f /import/credentials.json
-              n8n import:workflow --separate --input=/workflows --activeState=fromJson
+              n8n import:workflow --separate --input=/workflows
+              # 단일 인스턴스 모드에서는 import 가 활성화를 못 한다 → JSON 에 active: true 인 것만 게시(publish)
+              for f in /workflows/*.json; do
+                id=$(node -e 'const w = require(process.argv[1]); if (w.active) console.log(w.id)' "$f")
+                [ -n "$id" ] && n8n publish:workflow --id="$id"
+              done
           env:
             - { name: DB_TYPE, value: postgresdb }
             - { name: DB_POSTGRESDB_HOST, value: aiops-pg-rw.aiops.svc }
