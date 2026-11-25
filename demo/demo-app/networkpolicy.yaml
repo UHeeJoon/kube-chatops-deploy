@@ -1,0 +1,18 @@
+# demo-app 은 같은 네임스페이스(load-gen)와 이후 n8n(aiops) 장애 주입 호출만 받는다.
+# 플랫폼 기준선(platform-baseline)이 DNS 와 모니터링 스크레이프를 이미 허용한다.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: demo-app
+  namespace: demo
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/name: demo-app }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: {}
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: aiops }
+      ports:
+        - { port: 8080, protocol: TCP }

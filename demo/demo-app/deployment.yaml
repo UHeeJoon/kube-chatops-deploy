@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-app
+  namespace: demo
+  labels: { app.kubernetes.io/name: demo-app, app.kubernetes.io/part-of: kube-chatops }
+spec:
+  replicas: 2
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels: { app.kubernetes.io/name: demo-app }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: demo-app, app.kubernetes.io/part-of: kube-chatops }
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: app
+          image: ghcr.io/uheejoon/kube-chatops/demo-app@sha256:89a50b9ff864def1bff942ee40c18b83ab7c06eec8d718503ab406a813a008da
+          ports:
+            - { name: http, containerPort: 8080 }
+          env:
+            - { name: SERVICE_NAME, value: demo-app }
+          resources:
+            requests: { cpu: 50m, memory: 96Mi }
+            limits: { memory: 256Mi } # S1(메모리 누수) 시나리오에서 OOMKilled 가 나도록 낮게 둔다
+          readinessProbe:
+            httpGet: { path: /readyz, port: http }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 10
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }

@@ -1,0 +1,75 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: load-gen
+  namespace: demo
+  labels: { app.kubernetes.io/name: load-gen, app.kubernetes.io/part-of: kube-chatops }
+spec:
+  replicas: 1
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels: { app.kubernetes.io/name: load-gen }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: load-gen, app.kubernetes.io/part-of: kube-chatops }
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: load-gen
+          image: ghcr.io/uheejoon/kube-chatops/load-gen@sha256:e477f7b4683622d66026de9c6df8ae025bc310912add9560d9593e0d61baa59c
+          ports:
+            - { name: metrics, containerPort: 9100 }
+          env:
+            - { name: TARGET_URL, value: "http://demo-app.demo.svc:8080" }
+            - { name: BASE_RPS, value: "5" }
+            - { name: PERIOD_SECONDS, value: "3600" }
+          resources:
+            requests: { cpu: 20m, memory: 48Mi }
+            limits: { memory: 128Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: load-gen
+  namespace: demo
+  labels: { app.kubernetes.io/name: load-gen }
+spec:
+  selector: { app.kubernetes.io/name: load-gen }
+  ports:
+    - { name: metrics, port: 9100, targetPort: metrics }
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: load-gen
+  namespace: demo
+spec:
+  selector:
+    matchLabels: { app.kubernetes.io/name: load-gen }
+  endpoints:
+    - { port: metrics, interval: 30s }
+---
+# load-gen 은 demo-app 으로만 나간다
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: load-gen
+  namespace: demo
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/name: load-gen }
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels: { app.kubernetes.io/name: demo-app }
+      ports:
+        - { port: 8080, protocol: TCP }
