@@ -1,0 +1,83 @@
+# 애플리케이션 배포 저장소 CI — main 에서 검사를 통과한 커밋만 release 로 fast-forward 승격한다.
+# Argo CD 는 release 만 읽는다.
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  OWN_IMAGE: ghcr.io/uheejoon/
+  SIGNER: ^https://github\.com/UHeeJoon/kube-chatops/\.github/workflows/.+@refs/heads/main$
+
+jobs:
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: YAML 파싱
+        run: find aiops mcp demo mlops -name '*.yaml' -print0 | xargs -0 -r -n1 yq e 'true' > /dev/null
+      - name: 테넌트 규칙
+        run: |
+          fail=0
+          deny='^(Namespace|CustomResourceDefinition|ClusterRole|ClusterRoleBinding|PersistentVolume|StorageClass|PriorityClass|ValidatingWebhookConfiguration|MutatingWebhookConfiguration|Application|ApplicationSet|AppProject|ResourceQuota|LimitRange)$'
+          while IFS= read -r -d '' f; do
+            ns_dir=${f%%/*}
+            while IFS=$'\t' read -r kind ns; do
+              [ -z "$kind" ] && continue
+              if [[ $kind =~ $deny ]]; then echo "::error file=$f::$kind 은 homelab 에서 관리한다"; fail=1; fi
+              if [ -n "$ns" ] && [ "$ns" != "$ns_dir" ]; then echo "::error file=$f::namespace $ns ≠ 폴더 $ns_dir"; fail=1; fi
+            done < <(yq ea -N '[.kind // "", .metadata.namespace // ""] | @tsv' "$f")
+          done < <(find aiops mcp demo mlops -name '*.yaml' ! -name 'kustomization.yaml' ! -name 'values*.yaml' -print0)
+          exit $fail
+      - name: 자체 이미지 digest 고정
+        run: |
+          bad=$(grep -rhoE "${OWN_IMAGE}[^\"' ]+" aiops mcp demo mlops --include='*.yaml' | grep -v '@sha256:' || true)
+          if [ -n "$bad" ]; then echo "::error::digest 로 고정되지 않은 자체 이미지:"; echo "$bad"; exit 1; fi
+
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: sigstore/cosign-installer@v3
+      - name: 자체 이미지 서명 검증
+        run: |
+          imgs=$(grep -rhoE "${OWN_IMAGE}[^\"' ]+@sha256:[0-9a-f]{64}" aiops mcp demo mlops --include='*.yaml' | sort -u || true)
+          [ -z "$imgs" ] && { echo "자체 이미지 없음"; exit 0; }
+          echo "${{ secrets.GITHUB_TOKEN }}" | cosign login ghcr.io -u "${{ github.actor }}" --password-stdin
+          for i in $imgs; do
+            echo "== $i"
+            cosign verify "$i" \
+              --certificate-identity-regexp "$SIGNER" \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com > /dev/null
+          done
+
+  promote:
+    needs: [secret-scan, validate, verify]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ssh-key: ${{ secrets.PROMOTE_DEPLOY_KEY }}
+      - name: release 로 fast-forward
+        run: git push origin HEAD:refs/heads/release
