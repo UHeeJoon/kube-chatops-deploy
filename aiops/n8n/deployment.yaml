@@ -72,7 +72,7 @@ spec:
             readOnlyRootFilesystem: true
             capabilities: { drop: [ALL] }
           volumeMounts:
-            - { name: home, mountPath: /home/node/.n8n }
+            - { name: home, mountPath: /home/node } # .n8n, .cache (정적 파일 생성) 모두 여기
             - { name: tmp, mountPath: /tmp }
       volumes:
         - { name: home, emptyDir: { sizeLimit: 256Mi } }
