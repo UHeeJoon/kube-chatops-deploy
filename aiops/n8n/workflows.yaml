@@ -46,7 +46,7 @@ data:
         300
        ],
        "parameters": {
-        "jsCode": "// chat-gateway 가 보낸 공통 이벤트 JSON (body). 권한을 확인하고 다음 단계를 정한다.\nconst ROLES = {};\nconst ev = $json.body ?? {};\nconst role = ROLES[ev.user_id] ?? 'none';\nlet mode = 'route', reply = '';\nif (role === 'none') {\n  mode = 'reply';\n  reply = `권한이 없습니다. 운영자에게 사용자 ID \\`${ev.user_id}\\` 등록을 요청하세요.`;\n} else if (ev.type === 'button_click') {\n  mode = 'reply';\n  reply = '승인 버튼 처리는 아직 준비 중입니다.';\n} else if (!(ev.text ?? '').trim()) {\n  mode = 'reply';\n  reply = '무엇을 도와드릴까요? 예: \"주문 조회가 느려졌어요, 원인 확인해줘\"';\n}\nreturn [{ json: { ...ev, role, mode, reply, started_at: Date.now() } }];"
+        "jsCode": "// chat-gateway 가 보낸 공통 이벤트 JSON (body). 권한을 확인하고 다음 단계를 정한다.\nconst ROLES = {\"U0B330BGTJA\": \"operator\"};\nconst ev = $json.body ?? {};\nconst role = ROLES[ev.user_id] ?? 'none';\nlet mode = 'route', reply = '';\nif (role === 'none') {\n  mode = 'reply';\n  reply = `권한이 없습니다. 운영자에게 사용자 ID \\`${ev.user_id}\\` 등록을 요청하세요.`;\n} else if (ev.type === 'button_click') {\n  mode = 'reply';\n  reply = '승인 버튼 처리는 아직 준비 중입니다.';\n} else if (!(ev.text ?? '').trim()) {\n  mode = 'reply';\n  reply = '무엇을 도와드릴까요? 예: \"주문 조회가 느려졌어요, 원인 확인해줘\"';\n}\nreturn [{ json: { ...ev, role, mode, reply, started_at: Date.now() } }];"
        }
       },
       {

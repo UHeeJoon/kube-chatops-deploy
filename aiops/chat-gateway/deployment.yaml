@@ -40,7 +40,7 @@ spec:
             - name: API_TOKEN
               valueFrom: { secretKeyRef: { name: chat-gateway-api, key: token } }
             - { name: N8N_WEBHOOK_URL, value: "http://n8n.aiops.svc:5678/webhook/chat" }
-            - { name: ALERT_CHANNEL, value: "" } # 알림을 올릴 Slack 채널 ID
+            - { name: ALERT_CHANNEL, value: C0CLECWG67R } # 알림을 올릴 Slack 채널 ID
           resources:
             requests: { cpu: 20m, memory: 96Mi }
             limits: { memory: 256Mi }
