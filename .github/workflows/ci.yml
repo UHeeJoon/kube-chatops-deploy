@@ -45,7 +45,7 @@ jobs:
               [ -z "$kind" ] && continue
               if [[ $kind =~ $deny ]]; then echo "::error file=$f::$kind 은 homelab 에서 관리한다"; fail=1; fi
               if [ -n "$ns" ] && [ "$ns" != "$ns_dir" ]; then echo "::error file=$f::namespace $ns ≠ 폴더 $ns_dir"; fail=1; fi
-            done < <(yq ea -N '[.kind // "", .metadata.namespace // ""] | @tsv' "$f")
+            done < <(yq e -N '[.kind // "", .metadata.namespace // ""] | @tsv' "$f")
           done < <(find aiops mcp demo mlops -name '*.yaml' ! -name 'kustomization.yaml' ! -name 'values*.yaml' -print0)
           exit $fail
       - name: 자체 이미지 digest 고정
