@@ -1,6 +1,6 @@
 # demo 서비스 이상 탐지 모델 서빙 (KServe Standard 모드: Deployment + Service demo-anomaly-predictor).
 # 모델 버전은 STORAGE_URI 로 Git 에 고정한다. 바꾸는 커밋이 곧 champion 승격이다.
-#   지금: demo-anomaly v1 (MLflow model m-e4c5b7049f4c48b7a5736e60305656e0, 워크플로 anomaly-train-szbbv, 평가 F1 1.0)
+#   지금: demo-anomaly v5 (MLflow model m-abd6afdb82724d4cada96fb8306e23c3, 평가 F1 0.9035, 2026. 11. 26. 21시 43분 30초 Slack 승인 U0B330BGTJA)
 # storage-initializer 가 ServiceAccount anomaly-serve 의 Secret(mlops-s3) 으로 MinIO 에서 /mnt/models 로 내려받는다.
 apiVersion: serving.kserve.io/v1beta1
 kind: InferenceService
@@ -19,7 +19,7 @@ spec:
         args: [--model_name=demo-anomaly, --http_port=8080]
         env:
           - name: STORAGE_URI
-            value: s3://mlops/mlflow/1/models/m-e4c5b7049f4c48b7a5736e60305656e0/artifacts
+            value: s3://mlops/mlflow/1/models/m-abd6afdb82724d4cada96fb8306e23c3/artifacts
         ports:
           - { containerPort: 8080, protocol: TCP }
         resources:
