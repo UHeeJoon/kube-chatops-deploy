@@ -8,26 +8,28 @@
 #    셸 없이 내려받은 실행 파일을 바로 띄우는 우회(proc_open 배열, Runtime.exec 직접 실행)를 막는다.
 # 3) privesc-block: su·sudo·pkexec·nsenter 실행, setuid/setgid 비트 설정(chmod +s) → 그 프로세스 종료.
 #
-# 쓰기 거부는 BPF LSM 훅(커널 lsm 목록에 bpf 가 있어야 한다, 11-27 노드 확인)으로 한다. 이 커널은 kprobe 반환값 바꾸기(override_return)를 지원하지 않는다.
+# 쓰기 거부는 kprobe Override 로 한다. 이 커널(el10 6.12)은 bpf_override_return 이 없어 Tetragon 이 fmod_ret 로 대신한다
+# (Tetragon 에 --disable-kprobe-multi 필요, homelab apps/operators/tetragon.yaml). BPF LSM 훅(lsmhooks)은 Tetragon 1.8 의
+# 프로그램이 이 커널 검증기 한도(명령 100만 개)를 넘어 가장 단순한 정책도 로드되지 않았다 (11-27 확인).
 apiVersion: cilium.io/v1alpha1
 kind: TracingPolicyNamespaced
 metadata:
   name: webroot-tamper-block
   namespace: demo
 spec:
-  lsmhooks:
-    - hook: file_permission # 열린 파일에 읽기·쓰기할 때마다 (mask 로 쓰기만 고른다)
+  kprobes:
+    - call: security_file_permission # 열린 파일에 읽기·쓰기할 때마다 (mask 로 쓰기만 고른다)
+      syscall: false
       args:
         - { index: 0, type: file }
         - { index: 1, type: int }
       selectors:
         - matchBinaries:
             - operator: Postfix
-              values: [/java, /php, /php-fpm, /php-cgi, /apache2, /httpd, /nginx, /node, /uvicorn, /gunicorn]
+              values: [/java, /php, /php-fpm, /php-cgi, /apache2, /httpd, /nginx, /node, /python3, /python3.12] # demo-app(uvicorn)의 실행 파일은 python3.12
           matchArgs:
             - index: 0
               operator: Prefix
-              # 값이 많으면 BPF 검증기 한도(명령 100만 개)를 넘어 로드가 실패한다 (11-27 13개에서 실패).
               # /usr 하나로 /usr/bin·/usr/lib·/usr/share/nginx 를, merged-usr 배포판에서는 /bin·/lib 도 덮는다 (실제 경로로 비교).
               values: [/var/www/, /app/, /etc/, /usr/]
             - index: 1
