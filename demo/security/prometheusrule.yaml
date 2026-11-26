@@ -38,3 +38,29 @@ spec:
           annotations:
             summary: '{{ $labels.pod }} 에서 셸 실행 시도가 반복돼(5분간 약 {{ $value | printf "%.0f" }}회) 파드를 격리합니다'
             action_taken: "n8n: 파드 라벨 제거(서비스 제외, 새 파드로 교체) + 격리 라벨(네트워크 전부 차단), 파드는 증거로 보존"
+        - alert: DemoFileTamperBlocked
+          # 웹 서버가 웹 루트·시스템 경로에 쓰려다 거부됨 (runtime-policies.yaml webroot-tamper-block, 쓰기만 EPERM).
+          # 업로드 취약점으로 웹셸을 심으려는 단계. 서버는 계속 돌고 파일은 안 생겼으니 보고만 한다.
+          expr: |
+            sum by (namespace, pod, policy, binary) (
+              increase(tetragon_policy_events_total{namespace="demo", policy=~"webroot-tamper-block"}[5m]) > 0
+              or (tetragon_policy_events_total{namespace="demo", policy=~"webroot-tamper-block"}
+                  unless tetragon_policy_events_total{namespace="demo", policy=~"webroot-tamper-block"} offset 5m)
+            )
+          labels: { severity: critical, kube_chatops: "true", category: security }
+          annotations:
+            summary: '{{ $labels.pod }} 에서 웹 서버({{ $labels.binary }})가 웹 루트·시스템 경로에 쓰려다 거부됨 (5분간 약 {{ $value | printf "%.0f" }}회)'
+            action_taken: "Tetragon BPF LSM: 그 쓰기만 EPERM 으로 실패, 웹 서버는 유지"
+        - alert: DemoCompromiseBlocked
+          # 임시 경로에 내려받은 파일 실행, 권한 상승 도구 실행, setuid 비트 설정 (dropper-block, privesc-block).
+          # 이미 파일을 내려놓거나 권한을 바꾸려 한 것이라 침해가 진행 중인 것으로 본다 → 한 번이라도 먼저 격리하고 보고한다.
+          expr: |
+            sum by (namespace, pod, policy, binary) (
+              increase(tetragon_policy_events_total{namespace="demo", policy=~"dropper-block|privesc-block"}[5m]) > 0
+              or (tetragon_policy_events_total{namespace="demo", policy=~"dropper-block|privesc-block"}
+                  unless tetragon_policy_events_total{namespace="demo", policy=~"dropper-block|privesc-block"} offset 5m)
+            )
+          labels: { severity: critical, kube_chatops: "true", category: security, auto_action: quarantine }
+          annotations:
+            summary: '{{ $labels.pod }} 에서 {{ $labels.policy }} 규칙에 걸린 실행({{ $labels.binary }})을 막고 파드를 격리합니다'
+            action_taken: "Tetragon Sigkill(그 프로세스 종료) + n8n 격리(라벨 제거, 네트워크 전부 차단, 파드 보존)"

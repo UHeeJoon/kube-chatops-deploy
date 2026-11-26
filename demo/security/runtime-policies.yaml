@@ -1,0 +1,100 @@
+# 웹셸 다음 단계의 공격을 커널에서 막는다 (demo 만). 웹셸 차단(tracingpolicy.yaml)을 피해 가는 길 세 가지.
+# 같은 실행 규칙 일부를 클러스터 전체에서는 기록만 한다 (homelab components/operators/tetragon-policies/dropper-audit.yaml).
+# 걸리면 tetragon_policy_events_total{policy=...} 이 오르고 → prometheusrule.yaml 알림 → n8n → (격리) → 에이전트 조사 → Slack.
+#
+# 1) webroot-tamper-block: 웹 서버가 웹 루트·시스템 경로에 쓰기 → 그 쓰기만 거부(EPERM). 프로세스는 살려 둔다
+#    (서버 본체가 쓰는 경우라 죽이면 서비스 장애). 업로드 취약점으로 웹셸 파일을 심는 단계를 막는다.
+# 2) dropper-block: 임시 경로(/tmp, /dev/shm, memfd)나 웹 루트에 있는 파일 실행 → 그 프로세스 종료.
+#    셸 없이 내려받은 실행 파일을 바로 띄우는 우회(proc_open 배열, Runtime.exec 직접 실행)를 막는다.
+# 3) privesc-block: su·sudo·pkexec·nsenter 실행, setuid/setgid 비트 설정(chmod +s) → 그 프로세스 종료.
+#
+# 쓰기 거부는 BPF LSM 훅(커널 lsm 목록에 bpf 가 있어야 한다, 11-27 노드 확인)으로 한다. 이 커널은 kprobe 반환값 바꾸기(override_return)를 지원하지 않는다.
+apiVersion: cilium.io/v1alpha1
+kind: TracingPolicyNamespaced
+metadata:
+  name: webroot-tamper-block
+  namespace: demo
+spec:
+  lsmhooks:
+    - hook: file_permission # 열린 파일에 읽기·쓰기할 때마다 (mask 로 쓰기만 고른다)
+      args:
+        - { index: 0, type: file }
+        - { index: 1, type: int }
+      selectors:
+        - matchBinaries:
+            - operator: Postfix
+              values: [/java, /php, /php-fpm, /php-cgi, /apache2, /httpd, /nginx, /node, /uvicorn, /gunicorn]
+          matchArgs:
+            - index: 0
+              operator: Prefix
+              values: [/var/www/, /usr/share/nginx/, /app/, /etc/, /bin/, /sbin/, /usr/bin/, /usr/sbin/, /usr/lib/, /usr/local/bin/, /usr/local/lib/, /lib/, /root/]
+            - index: 1
+              operator: Mask
+              values: ["10"] # MAY_WRITE(2) | MAY_APPEND(8)
+          matchActions:
+            - action: Override
+              argError: -1 # EPERM: 쓰기만 실패
+---
+apiVersion: cilium.io/v1alpha1
+kind: TracingPolicyNamespaced
+metadata:
+  name: dropper-block
+  namespace: demo
+spec:
+  kprobes:
+    - call: security_bprm_creds_for_exec
+      syscall: false
+      args:
+        - { index: 0, type: linux_binprm }
+      selectors:
+        - matchArgs:
+            - index: 0
+              operator: Prefix
+              # memfd(파일 없는 실행)는 runc 도 자기 복제에 써서 차단하면 파드 시작·exec 가 깨질 수 있다 → 클러스터 기록(dropper-audit)으로 먼저 본다
+              values: [/tmp/, /dev/shm/, /var/tmp/, /run/, /var/www/]
+          matchActions:
+            - action: Sigkill
+---
+apiVersion: cilium.io/v1alpha1
+kind: TracingPolicyNamespaced
+metadata:
+  name: privesc-block
+  namespace: demo
+spec:
+  kprobes:
+    - call: security_bprm_creds_for_exec # 권한을 바꾸는 도구 실행
+      syscall: false
+      args:
+        - { index: 0, type: linux_binprm }
+      selectors:
+        - matchArgs:
+            - index: 0
+              operator: Postfix
+              values: [/su, /sudo, /pkexec, /doas, /nsenter, /unshare, /capsh, /setcap, /chroot]
+          matchActions:
+            - action: Sigkill
+    - call: sys_fchmodat # chmod u+s / g+s: 나중에 root 로 실행될 문을 만든다
+      syscall: true
+      args:
+        - { index: 0, type: int }
+        - { index: 1, type: string }
+        - { index: 2, type: int }
+      selectors:
+        - matchArgs:
+            - index: 2
+              operator: Mask
+              values: ["3072"] # S_ISUID(04000) | S_ISGID(02000)
+          matchActions:
+            - action: Sigkill
+    - call: sys_fchmod
+      syscall: true
+      args:
+        - { index: 0, type: int }
+        - { index: 1, type: int }
+      selectors:
+        - matchArgs:
+            - index: 1
+              operator: Mask
+              values: ["3072"]
+          matchActions:
+            - action: Sigkill

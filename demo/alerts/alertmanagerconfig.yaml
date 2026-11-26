@@ -17,7 +17,11 @@ spec:
   # 격리(DemoWebshellRepeated)가 뜨면 같은 파드의 차단 알림(DemoWebshellBlocked)은 따로 조사하지 않는다 (중복 조사 비용)
   inhibitRules:
     - sourceMatch: [{ name: alertname, value: DemoWebshellRepeated, matchType: "=" }]
-      targetMatch: [{ name: alertname, value: DemoWebshellBlocked, matchType: "=" }]
+      targetMatch: [{ name: alertname, value: "DemoWebshellBlocked|DemoFileTamperBlocked", matchType: "=~" }]
+      equal: [pod]
+    # 격리 알림이 뜬 파드의 다른 보안 알림은 같은 사건이다 (격리 보고 하나로 조사)
+    - sourceMatch: [{ name: alertname, value: DemoCompromiseBlocked, matchType: "=" }]
+      targetMatch: [{ name: alertname, value: "DemoWebshellBlocked|DemoFileTamperBlocked|DemoWebshellRepeated", matchType: "=~" }]
       equal: [pod]
   receivers:
     - name: n8n

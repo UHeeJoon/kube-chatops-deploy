@@ -12,6 +12,22 @@ data:
     // 일부러 취약: 요청 값을 그대로 셸에서 실행한다 (업로드된 웹셸과 같은 동작)
     header('Content-Type: text/plain');
     echo shell_exec($_GET['c'] ?? 'id');
+  upload.php: |
+    <?php
+    // 일부러 취약: 요청 본문을 원하는 경로에 그대로 쓴다 (검사 없는 파일 업로드). x=1 이면 실행 권한까지
+    header('Content-Type: text/plain');
+    $p = $_GET['p'] ?? '/var/www/html/uploads/up.txt';
+    $n = @file_put_contents($p, file_get_contents('php://input'));
+    if ($n !== false && ($_GET['x'] ?? '') === '1') { @chmod($p, 0755); }
+    echo $n === false ? "fail: " . (error_get_last()['message'] ?? '') . "\n" : "wrote $n bytes to $p\n";
+  run.php: |
+    <?php
+    // 일부러 취약: 파일을 셸 없이 직접 실행한다 (proc_open 배열 형식). 셸 실행을 막는 규칙을 피하려는 공격 흉내
+    header('Content-Type: text/plain');
+    $proc = @proc_open([$_GET['b'] ?? '/usr/bin/id'], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
+    if (!is_resource($proc)) { echo "fail\n"; exit; }
+    echo stream_get_contents($pipes[1]), stream_get_contents($pipes[2]);
+    echo "exit=" . proc_close($proc) . "\n";
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -29,6 +45,21 @@ spec:
       labels: { app.kubernetes.io/name: attack-lab-php, kube-chatops/purpose: security-test }
     spec:
       automountServiceAccountToken: false
+      # 웹 루트를 쓰기 가능하게 둔다 (업로드 취약점이 있는 흔한 PHP 앱 흉내). 코드는 시작할 때 ConfigMap 에서 복사
+      initContainers:
+        - name: copy-code
+          image: php:8.4-apache@sha256:95c1a1dfaaffef4bcfee563838c50620457a3c00196c4bf5ddb66934d707fea2
+          command: [sh, -c, "cp /code/* /var/www/html/ && mkdir -p /var/www/html/uploads && chmod 777 /var/www/html/uploads"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            seccompProfile: { type: RuntimeDefault }
+            capabilities: { drop: [ALL] }
+          resources:
+            requests: { cpu: 10m, memory: 16Mi }
+            limits: { memory: 64Mi }
+          volumeMounts:
+            - { name: code, mountPath: /code, readOnly: true }
+            - { name: webroot, mountPath: /var/www/html }
       containers:
         - name: php
           image: php:8.4-apache@sha256:95c1a1dfaaffef4bcfee563838c50620457a3c00196c4bf5ddb66934d707fea2
@@ -44,7 +75,9 @@ spec:
             seccompProfile: { type: RuntimeDefault }
             capabilities: { drop: [ALL], add: [NET_BIND_SERVICE, SETUID, SETGID] }
           volumeMounts:
-            - { name: code, mountPath: /var/www/html, readOnly: true }
+            - { name: webroot, mountPath: /var/www/html }
       volumes:
         - name: code
           configMap: { name: attack-lab-php }
+        - name: webroot
+          emptyDir: { sizeLimit: 16Mi }
