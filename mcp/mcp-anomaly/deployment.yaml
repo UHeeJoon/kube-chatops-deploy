@@ -25,7 +25,7 @@ spec:
         seccompProfile: { type: RuntimeDefault }
       containers:
         - name: app
-          image: ghcr.io/uheejoon/kube-chatops/mcp-anomaly@sha256:b2a04159a38f98b1a63c735b3bd57cf731e988ea6e6f0946512d43644194f8f2
+          image: ghcr.io/uheejoon/kube-chatops/mcp-anomaly@sha256:fb1d50d11a0a31724431d9a9a39365789db3c00ec0a7e07f961d99fc42d9e6df
           ports:
             - { name: http, containerPort: 8080 }
             - { name: metrics, containerPort: 9090 }
