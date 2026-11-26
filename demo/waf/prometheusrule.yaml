@@ -14,8 +14,9 @@ spec:
           # 5분에 5건 넘게 막으면 공격 시도로 본다 (스캐너 한 번 지나가면 수십~수백 건).
           # 403 카운터는 파드가 처음 막는 순간 생긴다. 처음 보는 시계열은 increase() 가 0 이라(앞 표본이 없음)
           # 5분 안에 새로 생긴 시계열은 현재 값을 그대로 더한다 (11-27 실측: 15건 막았는데 increase 0).
+          # sum by (namespace): Alertmanager 의 demo 경로(AlertmanagerConfig, namespace=demo 로 매칭)를 타려면 namespace 라벨이 남아야 한다
           expr: |
-            sum(
+            sum by (namespace) (
               (increase(caddy_http_request_duration_seconds_count{namespace="demo", handler="waf", code="403"}[5m]) unless (caddy_http_request_duration_seconds_count{namespace="demo", handler="waf", code="403"} unless caddy_http_request_duration_seconds_count{namespace="demo", handler="waf", code="403"} offset 5m))
               or (caddy_http_request_duration_seconds_count{namespace="demo", handler="waf", code="403"} unless caddy_http_request_duration_seconds_count{namespace="demo", handler="waf", code="403"} offset 5m)
             ) > 5
@@ -24,7 +25,7 @@ spec:
             summary: 'demo 웹 방화벽이 5분 동안 {{ $value | printf "%.0f" }}건을 막음'
             description: 'Coraza(OWASP CRS) 가 SQLi·경로 조작·명령 주입·스캐너 같은 요청을 403 으로 막았다. 출발 IP 와 규칙은 Loki {namespace="demo", container="waf"} |= "WAF rule violation" 에서 본다.'
         - alert: DemoWafDown
-          expr: sum(up{namespace="demo", job="waf"}) < 1 or absent(up{namespace="demo", job="waf"})
+          expr: sum by (namespace) (up{namespace="demo", job="waf"}) < 1 or absent(up{namespace="demo", job="waf"})
           for: 3m
           labels: { severity: critical, kube_chatops: "true" }
           annotations:
