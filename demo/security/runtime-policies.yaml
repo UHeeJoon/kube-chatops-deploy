@@ -27,7 +27,9 @@ spec:
           matchArgs:
             - index: 0
               operator: Prefix
-              values: [/var/www/, /usr/share/nginx/, /app/, /etc/, /bin/, /sbin/, /usr/bin/, /usr/sbin/, /usr/lib/, /usr/local/bin/, /usr/local/lib/, /lib/, /root/]
+              # 값이 많으면 BPF 검증기 한도(명령 100만 개)를 넘어 로드가 실패한다 (11-27 13개에서 실패).
+              # /usr 하나로 /usr/bin·/usr/lib·/usr/share/nginx 를, merged-usr 배포판에서는 /bin·/lib 도 덮는다 (실제 경로로 비교).
+              values: [/var/www/, /app/, /etc/, /usr/]
             - index: 1
               operator: Mask
               values: ["10"] # MAY_WRITE(2) | MAY_APPEND(8)
