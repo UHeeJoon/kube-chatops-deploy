@@ -15,7 +15,7 @@ spec:
     maxReplicas: 1
     containers:
       - name: kserve-container
-        image: ghcr.io/uheejoon/kube-chatops/anomaly-serve@sha256:044bc4fd847a099e42d8a1a374a24da2a79322194c2f6ea96a7ce778d084934c
+        image: ghcr.io/uheejoon/kube-chatops/anomaly-serve@sha256:dc87e031a6fd17e470da36707e3009b8406cdfadfd3313c603ccf7e7c3819797
         args: [--model_name=demo-anomaly, --http_port=8080]
         env:
           - name: STORAGE_URI
