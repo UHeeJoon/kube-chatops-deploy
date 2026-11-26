@@ -48,6 +48,13 @@ spec:
         - { name: S3_ENDPOINT, value: "http://minio.storage.svc.cluster.local" }
         - { name: S3_BUCKET, value: mlops }
         - { name: ARGO_WORKFLOW_NAME, value: "{{workflow.name}}" }
+        # notify(onExit) 용. 템플릿마다 env 를 따로 두면 templateDefaults 와 이름이 아니라 순서로 합쳐져
+        # value 와 valueFrom 이 한 항목에 같이 들어가 파드 생성이 거부된다 (11-26 겪음). 그래서 여기 한 곳에 둔다.
+        - { name: N8N_WEBHOOK_URL, value: "http://n8n.aiops.svc:5678/webhook/mlops" }
+        - name: N8N_WEBHOOK_TOKEN
+          valueFrom: { secretKeyRef: { name: mlops-n8n-webhook, key: token, optional: true } }
+        - { name: SLACK_CHANNEL, value: "{{workflow.parameters.slack-channel}}" }
+        - { name: SLACK_THREAD, value: "{{workflow.parameters.slack-thread}}" }
       resources:
         requests: { cpu: 100m, memory: 384Mi }
         limits: { memory: 1Gi }
@@ -132,11 +139,3 @@ spec:
     - name: notify
       container:
         args: [notify, --status, "{{workflow.status}}", --failures, "{{workflow.failures}}"]
-        env:
-          - { name: MLFLOW_TRACKING_URI, value: "http://mlflow.mlops.svc:5000" }
-          - { name: ARGO_WORKFLOW_NAME, value: "{{workflow.name}}" }
-          - { name: N8N_WEBHOOK_URL, value: "http://n8n.aiops.svc:5678/webhook/mlops" }
-          - name: N8N_WEBHOOK_TOKEN
-            valueFrom: { secretKeyRef: { name: mlops-n8n-webhook, key: token, optional: true } }
-          - { name: SLACK_CHANNEL, value: "{{workflow.parameters.slack-channel}}" }
-          - { name: SLACK_THREAD, value: "{{workflow.parameters.slack-thread}}" }
