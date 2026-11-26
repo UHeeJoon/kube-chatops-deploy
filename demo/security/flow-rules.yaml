@@ -3,6 +3,7 @@
 # 그래서 source_namespace 로 고른 뒤 namespace=demo 를 붙인다 (AlertmanagerConfig 가 namespace=demo 알림만 n8n 으로 보냄).
 # 차단은 이미 네트워크 정책이 한다. 여기서는 "막힌 시도가 있었다" 를 알려 사람·에이전트가 침해를 조사하게 한다.
 # 평소 demo 흐름: demo 안 8080, coredns 53 뿐이고 정책 차단 0 (11-27 확인).
+# 한계: 다른 노드 파드로 가다 막힌 흐름은 목적지 워크로드가 비어 있다 (Hubble 이 원격 파드의 이름을 모름). 정확한 포트·대상은 Hubble UI(hubble.ascode.click).
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
@@ -27,21 +28,22 @@ spec:
             ) > 3
           labels: { severity: warning, kube_chatops: "true", category: security }
           annotations:
-            summary: 'demo {{ $labels.source_workload }} 가 정책에 없는 곳({{ with $labels.destination_namespace }}{{ . }}/{{ end }}{{ or $labels.destination_workload "외부" }})으로 나가려다 5분 {{ $value | printf "%.0f" }}번 막힘'
+            summary: 'demo {{ $labels.source_workload }} 가 정책에 없는 곳({{ with $labels.destination_namespace }}{{ . }}/{{ end }}{{ or $labels.destination_workload "외부 또는 다른 노드 파드" }})으로 나가려다 5분 {{ $value | printf "%.0f" }}번 막힘'
             description: '횡이동·외부 연결 시도 의심. 목적지 IP·포트: sum by (destination, port, verdict) (increase(hubble_flows_to_world_total{source="demo"}[15m])). 그 워크로드의 Tetragon 이벤트(loki security_events)도 같이 본다.'
         - alert: DemoPortScan
-          # demo 에서 5분 동안 10개 넘는 서로 다른 목적지 포트로 연결 시도 (평소 8080, 53 두 개).
+          # 한 워크로드가 5분에 20번 넘게 정책에 막힘 = 포트 스캔·대량 횡이동 시도. 평소 demo 의 정책 차단은 0.
+          # 포트 수로 세지 않는 이유: port-distribution 지표는 통과한 흐름만 센다. 정책이 다 막는 스캔은 거기 안 남는다 (11-27 재현).
           expr: |
             label_replace(
-              count by (source_namespace) (
-                (increase(hubble_port_distribution_total{source_namespace="demo"}[5m]) > 0)
-                or (hubble_port_distribution_total{source_namespace="demo"} unless hubble_port_distribution_total{source_namespace="demo"} offset 5m)
+              sum by (source_namespace, source_workload) (
+                (increase(hubble_drop_total{source_namespace="demo", reason="POLICY_DENIED"}[5m]) unless (hubble_drop_total{source_namespace="demo", reason="POLICY_DENIED"} unless hubble_drop_total{source_namespace="demo", reason="POLICY_DENIED"} offset 5m))
+                or (hubble_drop_total{source_namespace="demo", reason="POLICY_DENIED"} unless hubble_drop_total{source_namespace="demo", reason="POLICY_DENIED"} offset 5m)
               ), "namespace", "$1", "source_namespace", "(.*)"
-            ) > 10
+            ) > 20
           labels: { severity: critical, kube_chatops: "true", category: security }
           annotations:
-            summary: 'demo 에서 5분 동안 서로 다른 포트 {{ $value | printf "%.0f" }}개로 연결 시도 (포트 스캔 의심)'
-            description: '평소에는 8080, 53 뿐이다. 어느 포트·대상: sum by (port, destination_namespace) (increase(hubble_port_distribution_total{source_namespace="demo"}[15m])), 어느 워크로드: hubble_drop_total{source_namespace="demo"}.'
+            summary: 'demo {{ $labels.source_workload }} 가 5분에 {{ $value | printf "%.0f" }}번 정책에 막힘 (포트 스캔·대량 횡이동 의심)'
+            description: '평소 demo 의 정책 차단은 0 이다. 목적지가 비어 있으면 외부이거나 다른 노드의 파드다 (Hubble 은 다른 노드 파드의 워크로드 이름을 모름). 막힌 곳: sum by (destination_namespace, destination_workload) (increase(hubble_drop_total{source_namespace="demo"}[15m])), 통과한 포트: hubble_port_distribution_total.'
         - alert: DemoUnexpectedEgress
           # demo 에서 클러스터 밖으로 실제로 나간 연결 (DNS 제외). demo 송신 정책은 클러스터 밖을 허용하지 않으므로 생기면 정책 구멍이다.
           expr: |
