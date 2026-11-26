@@ -10,5 +10,18 @@ spec:
     - { name: admin-gateway, namespace: ingress }
   hostnames: [mlflow.ascode.click]
   rules:
+    # 모델 버전 화면은 MLmodel 파일을 presigned URL 로 먼저 받으려 한다 (MLflow 3.18, 끄는 설정 없음).
+    # 그 URL 이 클러스터 안 주소(minio.storage.svc)라 브라우저가 열지 못하고 화면이 로딩에서 멈춘다.
+    # presigned 요청만 없는 경로로 바꿔 404 를 받게 하면, 화면이 MLflow 프록시(presigned 없는 get-artifact)로 다시 받는다.
+    - matches:
+        - path: { type: Exact, value: /model-versions/get-artifact }
+          queryParams:
+            - { type: Exact, name: presigned, value: "true" }
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path: { type: ReplaceFullPath, replaceFullPath: /model-versions/presigned-disabled }
+      backendRefs:
+        - { name: mlflow, port: 5000 }
     - backendRefs:
         - { name: mlflow, port: 5000 }
