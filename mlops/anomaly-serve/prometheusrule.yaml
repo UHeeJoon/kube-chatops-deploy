@@ -1,0 +1,29 @@
+# 이상 탐지가 멈췄는지 감시한다 (11-27).
+# v8 승격 직후 예측 서버가 모든 요청에 500 을 냈는데(입력 열 불일치) 15분 동안 아무 알림이 없었다.
+# 탐지기(mcp-anomaly)는 1분마다 판정하고 성공 시각을 지표로 남긴다. 5분 넘게 성공이 없으면 알린다.
+# kube_chatops 라벨이 없으므로 에이전트 조사 없이 플랫폼 알림(Alertmanager → Slack)으로 간다.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: anomaly-monitor
+  namespace: mlops
+  labels:
+    release: kube-prometheus
+spec:
+  groups:
+    - name: anomaly-monitor
+      rules:
+        - alert: AnomalyMonitorStale
+          expr: time() - max(anomaly_monitor_last_success_timestamp_seconds) > 300
+          for: 1m
+          labels: { severity: warning, namespace: mlops }
+          annotations:
+            summary: '이상 탐지가 {{ $value | humanizeDuration }} 동안 판정하지 못함'
+            description: '예측 서버(demo-anomaly-predictor) 오류이거나 탐지기(mcp-anomaly)가 멈췄다. 모델 승격 직후라면 kubectl -n mlops logs deploy/demo-anomaly-predictor -c kserve-container 를 보고, 급하면 Slack 의 이전 버전 카드에서 되돌린다.'
+        - alert: AnomalyMonitorAbsent
+          expr: absent(anomaly_monitor_last_success_timestamp_seconds)
+          for: 10m
+          labels: { severity: warning, namespace: mlops }
+          annotations:
+            summary: '이상 탐지기(mcp-anomaly) 지표가 없음'
+            description: 'mcp-anomaly 파드가 없거나 수집되지 않는다.'
