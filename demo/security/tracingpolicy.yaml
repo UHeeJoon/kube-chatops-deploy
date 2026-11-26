@@ -16,7 +16,7 @@ spec:
       selectors:
         - matchBinaries:
             - operator: Postfix
-              values: [/java, /php, /php-fpm, /php-cgi, /apache2, /httpd, /nginx]
+              values: [/java, /jspawnhelper, /php, /php-fpm, /php-cgi, /apache2, /httpd, /nginx] # jspawnhelper: Java ProcessBuilder 는 이 도우미가 대신 실행한다
           matchArgs:
             - index: 0
               operator: Postfix
