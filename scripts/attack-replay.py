@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shlex
 import subprocess
 import sys
 import time
@@ -84,16 +85,16 @@ def pod_of(app: str) -> str:
 
 
 def php(cmd: str, pod: str | None = None) -> str:
-    return sh(f"kubectl -n demo exec {pod or pod_of('attack-lab-php')} -c php -- bash -c {json.dumps(cmd)}")
+    return sh(f"kubectl -n demo exec {pod or pod_of('attack-lab-php')} -c php -- bash -c {shlex.quote(cmd)}")
 
 
 def java(cmd: str) -> str:
-    return sh(f"kubectl -n demo exec {pod_of('attack-lab-java')} -- sh -c {json.dumps(cmd)}")
+    return sh(f"kubectl -n demo exec {pod_of('attack-lab-java')} -- sh -c {shlex.quote(cmd)}")
 
 
 def outside(cmd: str) -> str:
     """클러스터 안의 임시 파드에서 게이트웨이로 (Cloudflare 가 붙이는 실제 IP 헤더를 흉내 낸다)."""
-    return sh(f"kubectl -n {NS_TMP} exec curl -- sh -c {json.dumps(cmd)}", timeout=300)
+    return sh(f"kubectl -n {NS_TMP} exec curl -- sh -c {shlex.quote(cmd)}", timeout=300)
 
 
 def curl_gw(path: str, ip: str, extra: str = "") -> str:
@@ -160,7 +161,7 @@ def s_privesc():
 def s_login():
     sh("kubectl -n keycloak delete pod replay-probe --ignore-not-found --wait=true")
     sh("kubectl -n keycloak run replay-probe --restart=Never --image=curlimages/curl:8.11.1 --command -- sh -c "
-       + json.dumps("for i in $(seq 25); do curl -s -o /dev/null -w '%{http_code} ' -d grant_type=password -d client_id=admin-cli "
+       + shlex.quote("for i in $(seq 25); do curl -s -o /dev/null -w '%{http_code} ' -d grant_type=password -d client_id=admin-cli "
                     "-d username=replay-nouser -d password=w$i http://keycloak.keycloak.svc/realms/master/protocol/openid-connect/token; done"))
     wait(lambda: sh("kubectl -n keycloak get pod replay-probe -o jsonpath='{.status.phase}'") in ("Succeeded", "Failed"), 90, 3)
     codes = sh("kubectl -n keycloak logs replay-probe").split()

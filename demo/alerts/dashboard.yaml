@@ -195,7 +195,7 @@ data:
        },
        "targets": [
         {
-         "expr": "count(kube_pod_owner{namespace=\"demo\", owner_kind=\"<none>\"}) or vector(0)",
+         "expr": "count(kube_pod_owner{namespace=\"demo\", owner_kind=~\"|<none>\"}) or vector(0)",
          "legendFormat": "",
          "refId": "A",
          "datasource": {

@@ -62,7 +62,7 @@ panel("stat", "이상 탐지 모델", [('max(anomaly_model_is_anomaly{rule="hybr
       "학습된 모델의 마지막 1분 판정 (요청 수, 오류율, 지연, 메모리)",
       defaults={"mappings": [{"type": "value", "options": {"0": {"text": "정상", "color": "green"}, "1": {"text": "이상", "color": "red"}}}],
                 **thr((None, "green"), (1, "red"))}, options=bg)
-panel("stat", "격리된 파드", [('count(kube_pod_owner{namespace="demo", owner_kind="<none>"}) or vector(0)', "")], 8, 4, 5, None,
+panel("stat", "격리된 파드", [('count(kube_pod_owner{namespace="demo", owner_kind=~"|<none>"}) or vector(0)', "")], 8, 4, 5, None,
       "선 조치로 격리된 파드 (라벨을 떼어 ReplicaSet 에서 분리됨, 모든 통신 차단). 조사 끝나면 Slack 의 [격리 파드 삭제]",
       defaults=thr((None, "green"), (1, "orange")), options=bg)
 panel("stat", "커널 차단 (24시간)", [(since(BLOCKS, "24h"), "")], 12, 4, 5, None,
