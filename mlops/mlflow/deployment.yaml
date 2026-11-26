@@ -33,15 +33,15 @@ spec:
           env:
             - { name: MLFLOW_HOST, value: 0.0.0.0 }
             - { name: MLFLOW_PORT, value: "5000" }
-            - { name: MLFLOW_WORKERS, value: "2" }
+            - { name: MLFLOW_WORKERS, value: "1" } # 호출자가 학습 파이프라인뿐. 워커마다 MLflow 전체를 올려 메모리가 크다
             - { name: MLFLOW_ARTIFACTS_DESTINATION, value: s3://mlops/mlflow }
             - { name: MLFLOW_S3_ENDPOINT_URL, value: http://minio.storage.svc.cluster.local }
             # Host 헤더 검사 (DNS rebinding 방지). 기본값은 localhost 와 사설 IP 뿐이라 서비스 이름을 넣는다.
             - name: MLFLOW_SERVER_ALLOWED_HOSTS
               value: "mlflow.mlops.svc.cluster.local:5000,mlflow.mlops.svc:5000,mlflow.mlops:5000,mlflow:5000,localhost:*,127.0.0.1:*"
           resources:
-            requests: { cpu: 100m, memory: 384Mi }
-            limits: { memory: 1Gi }
+            requests: { cpu: 100m, memory: 512Mi }
+            limits: { memory: 2Gi } # 1Gi(워커 2개)에서 기동 중 OOMKilled
           readinessProbe:
             httpGet: { path: /health, port: http, httpHeaders: [{ name: Host, value: "localhost:5000" }] }
             periodSeconds: 10
