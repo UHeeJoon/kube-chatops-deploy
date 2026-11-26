@@ -11,9 +11,16 @@ spec:
     - name: security
       rules:
         - alert: DemoWebshellBlocked
-          # 이미 차단(Sigkill)한 뒤의 보고다. for 없이 바로 보낸다
-          expr: sum by (namespace, pod, binary) (increase(tetragon_policy_events_total{namespace="demo", policy="webshell-block"}[5m])) > 0
+          # 이미 차단(Sigkill)한 뒤의 보고다. for 없이 바로 보낸다.
+          # Tetragon 은 파드의 첫 차단 때 카운터를 1 로 새로 만든다 → increase() 만 쓰면 0 이라 첫 공격을 놓친다 (11-26 Java 재현에서 겪음).
+          # 그래서 "5분 전에는 없던 카운터" 도 함께 본다.
+          expr: |
+            sum by (namespace, pod, binary) (
+              increase(tetragon_policy_events_total{namespace="demo", policy="webshell-block"}[5m]) > 0
+              or (tetragon_policy_events_total{namespace="demo", policy="webshell-block"}
+                  unless tetragon_policy_events_total{namespace="demo", policy="webshell-block"} offset 5m)
+            )
           labels: { severity: critical, kube_chatops: "true", category: security }
           annotations:
-            summary: "{{ $labels.pod }} 에서 웹 서버({{ $labels.binary }})가 셸 실행을 시도해 차단했습니다 (5분간 {{ $value | humanize }}회)"
+            summary: '{{ $labels.pod }} 에서 웹 서버({{ $labels.binary }})가 셸 실행을 시도해 차단했습니다 (5분간 약 {{ $value | printf "%.0f" }}회)'
             action_taken: "Tetragon Sigkill: 셸을 띄우려던 자식 프로세스만 종료, 웹 서버는 유지"
