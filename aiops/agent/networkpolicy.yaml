@@ -1,6 +1,6 @@
 # agent
 # 들어옴: aiops 내부(n8n) 의 8080. 스크레이프는 기준선이 허용.
-# 나감: aiops-pg(5432), mcp ns(8080), Tempo(4317), api.anthropic.com(443, 아래 Cilium FQDN 정책). 그 외 외부 차단.
+# 나감: aiops-pg(5432), mcp ns(8080), mcp-runbook(8080), Tempo(4317), api.anthropic.com(443, 아래 Cilium FQDN 정책). 그 외 외부 차단.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata: { name: agent, namespace: aiops }
@@ -22,6 +22,11 @@ spec:
     - to:
         - namespaceSelector:
             matchLabels: { kubernetes.io/metadata.name: mcp }
+      ports:
+        - { port: 8080, protocol: TCP }
+    - to: # 런북·과거 사건 검색 (같은 ns)
+        - podSelector:
+            matchLabels: { app.kubernetes.io/name: mcp-runbook }
       ports:
         - { port: 8080, protocol: TCP }
     - to:
