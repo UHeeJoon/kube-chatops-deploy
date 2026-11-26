@@ -46,7 +46,7 @@ data:
         300
        ],
        "parameters": {
-        "jsCode": "// chat-gateway 가 보낸 공통 이벤트 JSON (body). 권한을 확인하고 다음 단계를 정한다.\nconst ROLES = {\"U0B330BGTJA\": \"operator\"};\nconst ev = $json.body ?? {};\nconst role = ROLES[ev.user_id] ?? 'none';\nlet mode = 'route', reply = '';\nif (role === 'none') {\n  mode = 'reply';\n  reply = `권한이 없습니다. 운영자에게 사용자 ID \\`${ev.user_id}\\` 등록을 요청하세요.`;\n} else if (ev.type === 'button_click') {\n  mode = 'reply';\n  reply = '승인 버튼 처리는 아직 준비 중입니다.';\n} else if (!(ev.text ?? '').trim()) {\n  mode = 'reply';\n  reply = '무엇을 도와드릴까요? 예: \"주문 조회가 느려졌어요, 원인 확인해줘\"';\n}\nreturn [{ json: { ...ev, role, mode, reply, started_at: Date.now() } }];"
+        "jsCode": "// chat-gateway 가 보낸 공통 이벤트 JSON (body). 권한을 확인하고 다음 단계를 정한다.\nconst ROLES = {\"U0B330BGTJA\": \"operator\"};\nconst ev = $json.body ?? {};\nconst role = ROLES[ev.user_id] ?? 'none';\nlet mode = 'route', reply = '';\nif (role === 'none') {\n  mode = 'reply';\n  reply = `권한이 없습니다. 운영자에게 사용자 ID \\`${ev.user_id}\\` 등록을 요청하세요.`;\n} else if (ev.type === 'button_click' && String(ev.action?.id ?? '').startsWith('mlops_')) {\n  mode = 'mlops';  // 재학습·승격 버튼 → WF-04 (역할 확인은 WF-04 가 한다)\n} else if (ev.type === 'button_click') {\n  mode = 'reply';\n  reply = '승인 버튼 처리는 아직 준비 중입니다.';\n} else if (!(ev.text ?? '').trim()) {\n  mode = 'reply';\n  reply = '무엇을 도와드릴까요? 예: \"주문 조회가 느려졌어요, 원인 확인해줘\"';\n}\nreturn [{ json: { ...ev, role, mode, reply, started_at: Date.now() } }];"
        }
       },
       {
@@ -81,6 +81,60 @@ data:
          "combinator": "and"
         },
         "options": {}
+       }
+      },
+      {
+       "id": "998822b8-5508-5835-897d-45af17d99348",
+       "name": "MLOps?",
+       "type": "n8n-nodes-base.if",
+       "typeVersion": 2.2,
+       "position": [
+        1100,
+        550
+       ],
+       "parameters": {
+        "conditions": {
+         "options": {
+          "caseSensitive": true,
+          "leftValue": "",
+          "typeValidation": "loose",
+          "version": 2
+         },
+         "conditions": [
+          {
+           "id": "918a32b6-1684-5dc7-b7ab-568271e87c14",
+           "leftValue": "={{ $json.mode === 'mlops' || $json.next === 'mlops' }}",
+           "rightValue": "",
+           "operator": {
+            "type": "boolean",
+            "operation": "true",
+            "singleValue": true
+           }
+          }
+         ],
+         "combinator": "and"
+        },
+        "options": {}
+       }
+      },
+      {
+       "id": "9deb70d3-86aa-59a7-b1f7-fe311546b0b1",
+       "name": "MLOps (WF-04)",
+       "type": "n8n-nodes-base.executeWorkflow",
+       "typeVersion": 1.2,
+       "position": [
+        1320,
+        650
+       ],
+       "parameters": {
+        "workflowId": {
+         "__rl": true,
+         "value": "kcwf04mlops00001",
+         "mode": "id"
+        },
+        "options": {
+         "waitForSubWorkflow": false
+        }
        }
       },
       {
@@ -127,7 +181,7 @@ data:
         200
        ],
        "parameters": {
-        "jsCode": "// /route 결과로 다음 단계를 정한다. investigate → 조사 보고서, query → 짧은 답(answer 모드). 나머지는 바로 답장.\nconst ev = $('준비').item.json;\nconst res = $json;\nlet next = 'reply', reply = '', intent = 'error', mode = 'investigate';\nif (res.statusCode === 200) {\n  intent = res.body.intent;\n  if (intent === 'investigate' || intent === 'query') next = 'investigate';\n  if (intent === 'query') mode = 'answer';\n  else if (intent === 'action_request') reply = '조치 실행은 조사 보고서의 승인 버튼으로만 할 수 있습니다 (승인 흐름 준비 중). 먼저 무엇이 문제인지 물어봐 주세요.';\n  else if (intent === 'mlops') reply = '재학습과 모델 승격은 MLOps 단계에서 붙습니다.';\n  else reply = res.body.reply || '네.';\n} else if (res.statusCode === 429) {\n  reply = '오늘 AI 사용 예산을 다 썼습니다. 내일 다시 시도해 주세요.';\n} else {\n  reply = `요청을 처리하지 못했습니다 (agent ${res.statusCode ?? '연결 실패'}).`;\n}\nreturn [{ json: { ...ev, intent, next, reply, mode, question: ev.text, route_cost: res.body?.usage?.cost_usd ?? 0 } }];"
+        "jsCode": "// /route 결과로 다음 단계를 정한다. investigate → 조사 보고서, query → 짧은 답(answer 모드). 나머지는 바로 답장.\nconst ev = $('준비').item.json;\nconst res = $json;\nlet next = 'reply', reply = '', intent = 'error', mode = 'investigate';\nif (res.statusCode === 200) {\n  intent = res.body.intent;\n  if (intent === 'investigate' || intent === 'query') next = 'investigate';\n  if (intent === 'query') mode = 'answer';\n  else if (intent === 'mlops') next = 'mlops';\n  else if (intent === 'action_request') reply = '조치 실행은 조사 보고서의 승인 버튼으로만 할 수 있습니다 (승인 흐름 준비 중). 먼저 무엇이 문제인지 물어봐 주세요.';\n  else reply = res.body.reply || '네.';\n} else if (res.statusCode === 429) {\n  reply = '오늘 AI 사용 예산을 다 썼습니다. 내일 다시 시도해 주세요.';\n} else {\n  reply = `요청을 처리하지 못했습니다 (agent ${res.statusCode ?? '연결 실패'}).`;\n}\nreturn [{ json: { ...ev, intent, next, reply, mode, question: ev.text, route_cost: res.body?.usage?.cost_usd ?? 0 } }];"
        }
       },
       {
@@ -299,7 +353,7 @@ data:
         ],
         [
          {
-          "node": "답장 정리",
+          "node": "MLOps?",
           "type": "main",
           "index": 0
          }
@@ -333,6 +387,24 @@ data:
         [
          {
           "node": "조사 시작 (WF-02)",
+          "type": "main",
+          "index": 0
+         }
+        ],
+        [
+         {
+          "node": "MLOps?",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
+      "MLOps?": {
+       "main": [
+        [
+         {
+          "node": "MLOps (WF-04)",
           "type": "main",
           "index": 0
          }
@@ -755,6 +827,1175 @@ data:
        ]
       },
       "결과 올리기": {
+       "main": [
+        [
+         {
+          "node": "감사 기록",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
+      "감사 기록": {
+       "main": [
+        [
+         {
+          "node": "감사 (WF-99)",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      }
+     },
+     "settings": {
+      "executionOrder": "v1",
+      "saveDataSuccessExecution": "all",
+      "saveDataErrorExecution": "all",
+      "errorWorkflow": "kcwf99audit00001"
+     },
+     "pinData": {},
+     "tags": []
+    }
+  wf-04-mlops.json: |
+    {
+     "id": "kcwf04mlops00001",
+     "name": "WF-04 mlops (재학습과 승격)",
+     "active": true,
+     "nodes": [
+      {
+       "id": "02690833-0d51-5093-b834-dd3886041077",
+       "name": "학습 결과",
+       "type": "n8n-nodes-base.webhook",
+       "typeVersion": 2,
+       "position": [
+        0,
+        0
+       ],
+       "parameters": {
+        "httpMethod": "POST",
+        "path": "mlops",
+        "authentication": "headerAuth",
+        "responseMode": "onReceived",
+        "options": {}
+       },
+       "credentials": {
+        "httpHeaderAuth": {
+         "id": "kchookmlops00001",
+         "name": "webhook: 학습 파이프라인"
+        }
+       },
+       "webhookId": "e2ebc8f9-34af-5508-9860-6e17849fdd72"
+      },
+      {
+       "id": "1f5106df-9f72-5cba-8faa-55a2595c6d4b",
+       "name": "결과 카드",
+       "type": "n8n-nodes-base.code",
+       "typeVersion": 2,
+       "position": [
+        220,
+        0
+       ],
+       "parameters": {
+        "jsCode": "const MLFLOW_UI = 'http://mlflow.ascode.click';\nconst pct = v => (v === null || v === undefined || v === '') ? '-' : Number(v).toFixed(2);\nconst sec = t => ({ type: 'section', text: { type: 'mrkdwn', text: String(t).slice(0, 2900) } });\nconst ctx = t => ({ type: 'context', elements: [{ type: 'mrkdwn', text: String(t).slice(0, 2900) }] });\nconst promoteBtn = v => ({ type: 'button', style: 'primary', action_id: 'mlops_promote', value: String(v),\n  text: { type: 'plain_text', text: `v${v} 승격 (서빙 교체)` },\n  confirm: { title: { type: 'plain_text', text: `v${v} 승격` }, confirm: { type: 'plain_text', text: '승격' }, deny: { type: 'plain_text', text: '취소' },\n    text: { type: 'mrkdwn', text: `배포 저장소에 v${v} 로 바꾸는 커밋을 올립니다. 검사 통과 후 3~5분 안에 서빙 모델이 바뀝니다.` } } });\nconst retrainBtn = { type: 'button', action_id: 'mlops_retrain', value: 'anomaly-train', text: { type: 'plain_text', text: '재학습 시작' } };\nconst linkBtn = (text, url) => ({ type: 'button', action_id: 'mlops_link', url, text: { type: 'plain_text', text } });\n\n// Argo onExit 의 notify 단계가 보낸 학습 결과 → Slack 카드\nconst r = $json.body ?? {};\nconst ok = r.status === 'Succeeded';\nconst passed = r.evaluation === 'passed';\nconst champ = r.champion;\nlet head;\nif (!ok) head = `:x: *모델 재학습 실패* · \\`${r.workflow}\\``;\nelse if (passed && r.version) head = `:white_check_mark: *모델 재학습 완료* · v${r.version} 등록 (challenger)`;\nelse head = `:warning: *모델 재학습 완료, 평가 미통과* · 등록하지 않음`;\nconst blocks = [sec(head)];\nif (r.f1 !== undefined) {\n  const kinds = Object.entries(r.recall_by_kind ?? {}).map(([k, v]) => `${k} ${pct(v)}`).join(' · ') || '-';\n  blocks.push(sec(\n    `*평가* (정상 뒤쪽 + 장애 구간 ${r.data?.test_anomaly_rows ?? '?'}분)\\n` +\n    `• F1 *${pct(r.f1)}* · precision ${pct(r.precision)} · recall ${pct(r.recall)}\\n` +\n    `• 장애 종류별 재현율: ${kinds}\\n` +\n    `• 오탐 ${r.false_alarms_per_day ?? '-'}회/일 · 비교: z-score 기준선 ${pct(r.baseline_f1)}, IsolationForest 단독 ${pct(r.iforest_f1)}\\n` +\n    `• 지금 서빙(champion): ${champ ? `v${champ.version} · F1 ${pct(champ.f1)}` : '없음'}`));\n}\nif (r.failures?.length) blocks.push(sec('*실패한 단계*\\n' + r.failures.map(f => `• ${f.step ?? ''} ${f.message ?? ''}`).join('\\n')));\nif (r.summary_error) blocks.push(ctx(`MLflow 조회 실패: ${r.summary_error}`));\nconst buttons = [];\nif (ok && passed && r.version && (!champ || String(champ.version) !== String(r.version))) buttons.push(promoteBtn(r.version));\nbuttons.push(linkBtn('MLflow 에서 보기', `${MLFLOW_UI}/#/models/demo-anomaly`));\nblocks.push({ type: 'actions', elements: buttons });\nblocks.push(ctx(`워크플로 \\`${r.workflow}\\` · 데이터 ${String(r.data?.data_start ?? '').slice(0, 16)} ~ ${String(r.data?.data_end ?? '').slice(0, 16)} UTC`));\nreturn [{ json: { channel: r.slack?.channel ?? null, thread_ts: r.slack?.thread_ts ?? null, text: head.replace(/[*:`]/g, ''), blocks,\n  audit: { flow: 'wf-04-mlops', result: `training:${r.status}`, workflow: r.workflow, version: r.version ?? null, f1: r.f1 ?? null } } }];"
+       }
+      },
+      {
+       "id": "ba782b6b-4352-5fe8-85a3-dabf84fac283",
+       "name": "WF-01 에서 호출",
+       "type": "n8n-nodes-base.executeWorkflowTrigger",
+       "typeVersion": 1.1,
+       "position": [
+        0,
+        400
+       ],
+       "parameters": {
+        "inputSource": "passthrough"
+       }
+      },
+      {
+       "id": "5b04d0f3-1329-5db5-9115-c68d8dab1cbc",
+       "name": "요청 정리",
+       "type": "n8n-nodes-base.code",
+       "typeVersion": 2,
+       "position": [
+        220,
+        400
+       ],
+       "parameters": {
+        "jsCode": "// WF-01 이 넘긴 이벤트 → 할 일. 재학습·승격은 operator 만.\nconst ev = $json;\nconst id = ev.action?.id ?? '';\nlet op = 'status';\nif (ev.type === 'button_click') {\n  if (id === 'mlops_link') return [];  // 링크 버튼은 브라우저가 연다. 할 일 없음\n  op = id === 'mlops_retrain' ? 'retrain' : id === 'mlops_promote' ? 'promote' : 'unknown';\n}\nif ((op === 'retrain' || op === 'promote') && ev.role !== 'operator') op = 'deny';\nreturn [{ json: { ...ev, op, version: op === 'promote' ? String(ev.action?.value ?? '') : null } }];"
+       }
+      },
+      {
+       "id": "5b5b97a6-fd78-5635-8ce2-5c925ae3b7c5",
+       "name": "상태?",
+       "type": "n8n-nodes-base.if",
+       "typeVersion": 2.2,
+       "position": [
+        440,
+        400
+       ],
+       "parameters": {
+        "conditions": {
+         "options": {
+          "caseSensitive": true,
+          "leftValue": "",
+          "typeValidation": "loose",
+          "version": 2
+         },
+         "conditions": [
+          {
+           "id": "9a37c57b-2788-5269-900a-54caf4e7bdc8",
+           "leftValue": "={{ $json.op === 'status' }}",
+           "rightValue": "",
+           "operator": {
+            "type": "boolean",
+            "operation": "true",
+            "singleValue": true
+           }
+          }
+         ],
+         "combinator": "and"
+        },
+        "options": {}
+       }
+      },
+      {
+       "id": "89d9d18c-a11a-569f-8767-d02c8c407b50",
+       "name": "버전 목록",
+       "type": "n8n-nodes-base.httpRequest",
+       "typeVersion": 4.2,
+       "position": [
+        660,
+        300
+       ],
+       "parameters": {
+        "method": "GET",
+        "url": "={{ 'http://mlflow.mlops.svc:5000/api/2.0/mlflow/model-versions/search?max_results=5&order_by=version_number%20DESC&filter=' + encodeURIComponent(\"name='demo-anomaly'\") }}",
+        "options": {
+         "timeout": 30000,
+         "response": {
+          "response": {
+           "fullResponse": true,
+           "neverError": true
+          }
+         }
+        }
+       }
+      },
+      {
+       "id": "eea2dcb0-9f94-59b9-905f-7fb5a7442e13",
+       "name": "상태 카드",
+       "type": "n8n-nodes-base.code",
+       "typeVersion": 2,
+       "position": [
+        880,
+        300
+       ],
+       "parameters": {
+        "jsCode": "const MLFLOW_UI = 'http://mlflow.ascode.click';\nconst pct = v => (v === null || v === undefined || v === '') ? '-' : Number(v).toFixed(2);\nconst sec = t => ({ type: 'section', text: { type: 'mrkdwn', text: String(t).slice(0, 2900) } });\nconst ctx = t => ({ type: 'context', elements: [{ type: 'mrkdwn', text: String(t).slice(0, 2900) }] });\nconst promoteBtn = v => ({ type: 'button', style: 'primary', action_id: 'mlops_promote', value: String(v),\n  text: { type: 'plain_text', text: `v${v} 승격 (서빙 교체)` },\n  confirm: { title: { type: 'plain_text', text: `v${v} 승격` }, confirm: { type: 'plain_text', text: '승격' }, deny: { type: 'plain_text', text: '취소' },\n    text: { type: 'mrkdwn', text: `배포 저장소에 v${v} 로 바꾸는 커밋을 올립니다. 검사 통과 후 3~5분 안에 서빙 모델이 바뀝니다.` } } });\nconst retrainBtn = { type: 'button', action_id: 'mlops_retrain', value: 'anomaly-train', text: { type: 'plain_text', text: '재학습 시작' } };\nconst linkBtn = (text, url) => ({ type: 'button', action_id: 'mlops_link', url, text: { type: 'plain_text', text } });\n\n// 최근 모델 버전 5개 (태그 test_f1, alias) → 상태 카드\nconst req = $('요청 정리').item.json;\nconst vs = $json.statusCode === 200 ? ($json.body.model_versions ?? []) : null;\nif (!vs) return [{ json: { channel: req.channel_id, thread_ts: req.thread_id, text: `MLflow 조회 실패 (${$json.statusCode})` } }];\nconst tag = (v, k) => (v.tags ?? []).find(t => t.key === k)?.value;\nconst champ = vs.find(v => (v.aliases ?? []).includes('champion'));\nconst chall = vs.find(v => (v.aliases ?? []).includes('challenger'));\nconst lines = vs.map(v => {\n  const al = (v.aliases ?? []).map(a => a === 'champion' ? '*champion (서빙 중)*' : a).join(', ');\n  const at = new Date(Number(v.creation_timestamp)).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });\n  return `• v${v.version} · F1 ${pct(tag(v, 'test_f1'))} · ${at}${al ? ' · ' + al : ''}`;\n});\nconst blocks = [sec(`:bar_chart: *이상 탐지 모델 \\`demo-anomaly\\`*\\n${lines.join('\\n') || '등록된 버전 없음'}`)];\nconst buttons = [retrainBtn];\nif (chall && (!champ || chall.version !== champ.version)) buttons.unshift(promoteBtn(chall.version));\nbuttons.push(linkBtn('MLflow', `${MLFLOW_UI}/#/models/demo-anomaly`));\nblocks.push({ type: 'actions', elements: buttons });\nblocks.push(ctx('재학습은 2~3분 걸리고 결과는 이 스레드에 달립니다. 매주 월 03:00 에도 자동으로 돕니다. 승격은 operator 만 할 수 있습니다.'));\nreturn [{ json: { channel: req.channel_id, thread_ts: req.thread_id, text: '이상 탐지 모델 상태', blocks,\n  audit: { flow: 'wf-04-mlops', result: 'status', user_id: req.user_id } } }];"
+       }
+      },
+      {
+       "id": "f3c747ca-be23-50a3-a764-fe993d6870b1",
+       "name": "재학습?",
+       "type": "n8n-nodes-base.if",
+       "typeVersion": 2.2,
+       "position": [
+        660,
+        500
+       ],
+       "parameters": {
+        "conditions": {
+         "options": {
+          "caseSensitive": true,
+          "leftValue": "",
+          "typeValidation": "loose",
+          "version": 2
+         },
+         "conditions": [
+          {
+           "id": "e23f8925-35ec-5967-99f0-a25045911655",
+           "leftValue": "={{ $json.op === 'retrain' }}",
+           "rightValue": "",
+           "operator": {
+            "type": "boolean",
+            "operation": "true",
+            "singleValue": true
+           }
+          }
+         ],
+         "combinator": "and"
+        },
+        "options": {}
+       }
+      },
+      {
+       "id": "63815c0a-8f20-5dd4-acae-a20e05ca0c15",
+       "name": "워크플로 제출",
+       "type": "n8n-nodes-base.httpRequest",
+       "typeVersion": 4.2,
+       "position": [
+        880,
+        450
+       ],
+       "parameters": {
+        "method": "POST",
+        "url": "https://kubernetes.default.svc/apis/argoproj.io/v1alpha1/namespaces/mlops/workflows",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ apiVersion: 'argoproj.io/v1alpha1', kind: 'Workflow', metadata: { generateName: 'anomaly-train-', namespace: 'mlops', labels: { 'kube-chatops/trigger': 'slack' }, annotations: { 'kube-chatops/requested-by': $json.user_id } }, spec: { workflowTemplateRef: { name: 'anomaly-train' }, arguments: { parameters: [{ name: 'slack-channel', value: $json.channel_id }, { name: 'slack-thread', value: $json.thread_id }] } } }) }}",
+        "options": {
+         "timeout": 30000,
+         "response": {
+          "response": {
+           "fullResponse": true,
+           "neverError": true
+          }
+         }
+        }
+       },
+       "credentials": {
+        "httpHeaderAuth": {
+         "id": "kck8smlops000001",
+         "name": "kubernetes: mlops 워크플로 제출"
+        }
+       }
+      },
+      {
+       "id": "beb953dc-511e-51b0-906e-1507da7d112d",
+       "name": "재학습 답장",
+       "type": "n8n-nodes-base.code",
+       "typeVersion": 2,
+       "position": [
+        1100,
+        450
+       ],
+       "parameters": {
+        "jsCode": "const req = $('요청 정리').item.json;\nconst ok = $json.statusCode === 201;\nconst name = $json.body?.metadata?.name;\nreturn [{ json: { channel: req.channel_id, thread_ts: req.thread_id,\n  text: ok ? `:gear: <@${req.user_id}> 재학습을 시작했습니다 (\\`${name}\\`). 2~3분 뒤 이 스레드에 결과가 달립니다.`\n           : `:warning: 재학습 제출 실패 (kubernetes ${$json.statusCode}: ${String($json.body?.message ?? '').slice(0, 200)})`,\n  audit: { flow: 'wf-04-mlops', result: ok ? 'retrain:submitted' : 'retrain:error', user_id: req.user_id, workflow: name ?? null, k8s_status: $json.statusCode } } }];"
+       }
+      },
+      {
+       "id": "85cdafe1-053e-5351-8a76-c3ad28ef0900",
+       "name": "승격?",
+       "type": "n8n-nodes-base.if",
+       "typeVersion": 2.2,
+       "position": [
+        880,
+        650
+       ],
+       "parameters": {
+        "conditions": {
+         "options": {
+          "caseSensitive": true,
+          "leftValue": "",
+          "typeValidation": "loose",
+          "version": 2
+         },
+         "conditions": [
+          {
+           "id": "88bd741c-b5d8-5d2a-9f5c-c4ad3f5a261d",
+           "leftValue": "={{ $json.op === 'promote' }}",
+           "rightValue": "",
+           "operator": {
+            "type": "boolean",
+            "operation": "true",
+            "singleValue": true
+           }
+          }
+         ],
+         "combinator": "and"
+        },
+        "options": {}
+       }
+      },
+      {
+       "id": "a1eafe42-e73c-5263-9429-27a628bfa0fe",
+       "name": "권한 없음",
+       "type": "n8n-nodes-base.code",
+       "typeVersion": 2,
+       "position": [
+        1100,
+        800
+       ],
+       "parameters": {
+        "jsCode": "const req = $json;\nconst text = req.op === 'deny' ? `:no_entry: 재학습과 승격은 operator 만 할 수 있습니다 (<@${req.user_id}> 는 ${req.role}).` : '알 수 없는 버튼입니다.';\nreturn [{ json: { channel: req.channel_id, thread_ts: req.thread_id, text, audit: { flow: 'wf-04-mlops', result: req.op, user_id: req.user_id, role: req.role } } }];"
+       }
+      },
+      {
+       "id": "2ef52cd5-52da-538e-a8c2-f9de3c4cfb9d",
+       "name": "버전 조회",
+       "type": "n8n-nodes-base.httpRequest",
+       "typeVersion": 4.2,
+       "position": [
+        1100,
+        650
+       ],
+       "parameters": {
+        "method": "GET",
+        "url": "={{ 'http://mlflow.mlops.svc:5000/api/2.0/mlflow/model-versions/get?name=demo-anomaly&version=' + encodeURIComponent($json.version) }}",
+        "options": {
+         "timeout": 30000,
+         "response": {
+          "response": {
+           "fullResponse": true,
+           "neverError": true
+          }
+         }
+        }
+       }
+      },
+      {
+       "id": "f592077b-bd1d-56f9-b1fd-bcb48e31d6f9",
+       "name": "승격 준비",
+       "type": "n8n-nodes-base.code",
+       "typeVersion": 2,
+       "position": [
+        1320,
+        650
+       ],
+       "parameters": {
+        "jsCode": "// 승격할 버전의 모델 위치(storage_uri 태그)와 model id. 이미 champion 이면 멈춘다.\nconst req = $('요청 정리').item.json;\nif ($json.statusCode !== 200) throw new Error(`MLflow 버전 조회 실패: v${req.version} ${$json.statusCode}`);\nconst mv = $json.body.model_version;\nconst uri = (mv.tags ?? []).find(t => t.key === 'storage_uri')?.value;\nconst f1 = (mv.tags ?? []).find(t => t.key === 'test_f1')?.value;\nconst modelId = String(mv.source ?? '').replace(/^models:\\//, '');\nif (!uri || !/^s3:\\/\\/mlops\\/mlflow\\/[\\w/.-]+$/.test(uri)) throw new Error(`v${req.version} 에 올바른 storage_uri 태그가 없다: ${uri}`);\nreturn [{ json: { ...req, storage_uri: uri, model_id: modelId, f1, already: (mv.aliases ?? []).includes('champion') } }];"
+       }
+      },
+      {
+       "id": "7f2db3a6-de5f-585d-a6c1-d88425b1941b",
+       "name": "이미 champion?",
+       "type": "n8n-nodes-base.if",
+       "typeVersion": 2.2,
+       "position": [
+        1540,
+        650
+       ],
+       "parameters": {
+        "conditions": {
+         "options": {
+          "caseSensitive": true,
+          "leftValue": "",
+          "typeValidation": "loose",
+          "version": 2
+         },
+         "conditions": [
+          {
+           "id": "afdd9e6f-5d87-5507-9c4a-96a4b48ceae6",
+           "leftValue": "={{ $json.already }}",
+           "rightValue": "",
+           "operator": {
+            "type": "boolean",
+            "operation": "true",
+            "singleValue": true
+           }
+          }
+         ],
+         "combinator": "and"
+        },
+        "options": {}
+       }
+      },
+      {
+       "id": "3a21005a-a874-553e-957c-a98917d83546",
+       "name": "이미 서빙 중",
+       "type": "n8n-nodes-base.code",
+       "typeVersion": 2,
+       "position": [
+        1760,
+        800
+       ],
+       "parameters": {
+        "jsCode": "const p = $json;\nreturn [{ json: { channel: p.channel_id, thread_ts: p.thread_id, text: `v${p.version} 은 이미 champion(서빙 중) 입니다.`,\n  audit: { flow: 'wf-04-mlops', result: 'promote:already', user_id: p.user_id, version: p.version } } }];"
+       }
+      },
+      {
+       "id": "ad05e38f-4058-54f6-ae69-c1e9b4225330",
+       "name": "파일 읽기",
+       "type": "n8n-nodes-base.httpRequest",
+       "typeVersion": 4.2,
+       "position": [
+        1760,
+        600
+       ],
+       "parameters": {
+        "method": "GET",
+        "url": "https://api.github.com/repos/UHeeJoon/kube-chatops-deploy/contents/mlops/anomaly-serve/inferenceservice.yaml?ref=main",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+         "parameters": [
+          {
+           "name": "Accept",
+           "value": "application/vnd.github+json"
+          },
+          {
+           "name": "X-GitHub-Api-Version",
+           "value": "2022-11-28"
+          },
+          {
+           "name": "User-Agent",
+           "value": "kube-chatops-n8n"
+          }
+         ]
+        },
+        "options": {
+         "timeout": 30000,
+         "response": {
+          "response": {
+           "fullResponse": true,
+           "neverError": true
+          }
+         }
+        }
+       },
+       "credentials": {
+        "httpHeaderAuth": {
+         "id": "kcgithubdeploy01",
+         "name": "github: kube-chatops-deploy"
+        }
+       }
+      },
+      {
+       "id": "d828d4b9-fdca-58a0-bd12-144146b9a6a3",
+       "name": "파일 고치기",
+       "type": "n8n-nodes-base.code",
+       "typeVersion": 2,
+       "position": [
+        1980,
+        600
+       ],
+       "parameters": {
+        "jsCode": "// 배포 저장소의 InferenceService 에서 STORAGE_URI 값과 '지금:' 주석 한 줄만 바꾼다.\nconst p = $('승격 준비').item.json;\nif ($json.statusCode !== 200) throw new Error(`GitHub 파일 읽기 실패 ${$json.statusCode}: ${JSON.stringify($json.body).slice(0, 200)}`);\nconst src = Buffer.from($json.body.content, 'base64').toString('utf8');\nconst kst = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', hour12: false });\nlet out = src.replace(/(- name: STORAGE_URI\\n\\s*value: )\\S+/, `$1${p.storage_uri}`);\nout = out.replace(/^#   지금: .*$/m, `#   지금: demo-anomaly v${p.version} (MLflow model ${p.model_id}, 평가 F1 ${p.f1 ?? '-'}, ${kst} Slack 승인 ${p.user_id})`);\nif (out === src) throw new Error('파일이 바뀌지 않았다 (이미 이 버전이거나 STORAGE_URI 줄을 못 찾음)');\nif (!out.includes(p.storage_uri)) throw new Error('STORAGE_URI 줄을 못 찾았다');\nreturn [{ json: { ...p, put: { message: `mlops: demo-anomaly v${p.version} 승격 (Slack 승인 ${p.user_id})\\n\\nMLflow model ${p.model_id}, 평가 F1 ${p.f1 ?? '-'}\\nSTORAGE_URI ${p.storage_uri}`,\n  content: Buffer.from(out, 'utf8').toString('base64'), sha: $json.body.sha, branch: 'main' } } }];"
+       }
+      },
+      {
+       "id": "5062f4a2-8eb0-5dc3-b9f1-bd0f50a71bad",
+       "name": "커밋",
+       "type": "n8n-nodes-base.httpRequest",
+       "typeVersion": 4.2,
+       "position": [
+        2200,
+        600
+       ],
+       "parameters": {
+        "method": "PUT",
+        "url": "https://api.github.com/repos/UHeeJoon/kube-chatops-deploy/contents/mlops/anomaly-serve/inferenceservice.yaml",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+         "parameters": [
+          {
+           "name": "Accept",
+           "value": "application/vnd.github+json"
+          },
+          {
+           "name": "X-GitHub-Api-Version",
+           "value": "2022-11-28"
+          },
+          {
+           "name": "User-Agent",
+           "value": "kube-chatops-n8n"
+          }
+         ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.put) }}",
+        "options": {
+         "timeout": 30000,
+         "response": {
+          "response": {
+           "fullResponse": true,
+           "neverError": true
+          }
+         }
+        }
+       },
+       "credentials": {
+        "httpHeaderAuth": {
+         "id": "kcgithubdeploy01",
+         "name": "github: kube-chatops-deploy"
+        }
+       }
+      },
+      {
+       "id": "8c77e619-6b5c-5a15-906c-3177e450dd25",
+       "name": "커밋 완료",
+       "type": "n8n-nodes-base.code",
+       "typeVersion": 2,
+       "position": [
+        2420,
+        600
+       ],
+       "parameters": {
+        "jsCode": "const p = $('파일 고치기').item.json;\nif (![200, 201].includes($json.statusCode)) throw new Error(`GitHub 커밋 실패 ${$json.statusCode}: ${JSON.stringify($json.body).slice(0, 300)}`);\nconst sha = $json.body.commit.sha;\nreturn [{ json: { ...p, commit: sha, channel: p.channel_id, thread_ts: p.thread_id,\n  text: `:rocket: <@${p.user_id}> 승인으로 v${p.version} 승격 커밋을 올렸습니다 (<${$json.body.commit.html_url}|${sha.slice(0, 7)}>). 배포 검사 → release → Argo CD 반영을 기다립니다 (보통 3~5분).` } }];"
+       }
+      },
+      {
+       "id": "3cb30b4b-c397-594b-9a56-b41bca5c6ef6",
+       "name": "커밋 알림",
+       "type": "n8n-nodes-base.httpRequest",
+       "typeVersion": 4.2,
+       "position": [
+        2640,
+        600
+       ],
+       "parameters": {
+        "method": "POST",
+        "url": "http://chat-gateway.aiops.svc:8080/slack/post",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ channel: $json.channel, thread_ts: $json.thread_ts, text: $json.text, blocks: $json.blocks ?? null }) }}",
+        "options": {
+         "timeout": 30000,
+         "response": {
+          "response": {
+           "fullResponse": true,
+           "neverError": true
+          }
+         }
+        }
+       },
+       "credentials": {
+        "httpHeaderAuth": {
+         "id": "kcgatewayapi0001",
+         "name": "chat-gateway API"
+        }
+       }
+      },
+      {
+       "id": "134a00bb-3960-51e9-b366-1f7f0ec89d7e",
+       "name": "1분 대기",
+       "type": "n8n-nodes-base.wait",
+       "typeVersion": 1.1,
+       "position": [
+        2860,
+        600
+       ],
+       "parameters": {
+        "amount": 60,
+        "unit": "seconds"
+       },
+       "webhookId": "15e37163-1102-5786-869e-86d6eee40be6"
+      },
+      {
+       "id": "63a7fb75-c91c-53cf-9abd-a1ab14b85e02",
+       "name": "서빙 모델 확인",
+       "type": "n8n-nodes-base.httpRequest",
+       "typeVersion": 4.2,
+       "position": [
+        3080,
+        600
+       ],
+       "parameters": {
+        "method": "POST",
+        "url": "http://demo-anomaly-predictor.mlops.svc/v1/models/demo-anomaly:predict",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ instances: [{ rps: 1, error_ratio: 0, p95_seconds: 0.01, mem_ratio: 0.1 }] }) }}",
+        "options": {
+         "timeout": 10000,
+         "response": {
+          "response": {
+           "fullResponse": true,
+           "neverError": true
+          }
+         }
+        }
+       }
+      },
+      {
+       "id": "29d6a16c-c071-512e-aacb-189108b784e8",
+       "name": "반영 확인",
+       "type": "n8n-nodes-base.code",
+       "typeVersion": 2,
+       "position": [
+        3300,
+        600
+       ],
+       "parameters": {
+        "jsCode": "// 예측 서버가 새 모델로 답하는지. 15번(약 15분)까지 기다린다.\nconst p = $('커밋 완료').item.json;\nconst served = $json.body?.model_version ?? null;\nconst tries = $runIndex + 1;\nreturn [{ json: { ...p, served, tries, done: served === p.model_id, give_up: served !== p.model_id && tries >= 15 } }];"
+       }
+      },
+      {
+       "id": "02000caf-fa85-5470-a4b1-895dc36619e9",
+       "name": "반영됨?",
+       "type": "n8n-nodes-base.if",
+       "typeVersion": 2.2,
+       "position": [
+        3520,
+        600
+       ],
+       "parameters": {
+        "conditions": {
+         "options": {
+          "caseSensitive": true,
+          "leftValue": "",
+          "typeValidation": "loose",
+          "version": 2
+         },
+         "conditions": [
+          {
+           "id": "cbdb4254-1889-5da9-b79c-7f0b4ebf3596",
+           "leftValue": "={{ $json.done }}",
+           "rightValue": "",
+           "operator": {
+            "type": "boolean",
+            "operation": "true",
+            "singleValue": true
+           }
+          }
+         ],
+         "combinator": "and"
+        },
+        "options": {}
+       }
+      },
+      {
+       "id": "14ba26c2-0348-508f-bd21-7fb5f3387852",
+       "name": "champion 지정",
+       "type": "n8n-nodes-base.httpRequest",
+       "typeVersion": 4.2,
+       "position": [
+        3740,
+        500
+       ],
+       "parameters": {
+        "method": "POST",
+        "url": "http://mlflow.mlops.svc:5000/api/2.0/mlflow/registered-models/alias",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ name: 'demo-anomaly', alias: 'champion', version: String($json.version) }) }}",
+        "options": {
+         "timeout": 30000,
+         "response": {
+          "response": {
+           "fullResponse": true,
+           "neverError": true
+          }
+         }
+        }
+       }
+      },
+      {
+       "id": "608bbbb5-b997-583d-9ed7-6c5c7ed83ff9",
+       "name": "완료 답장",
+       "type": "n8n-nodes-base.code",
+       "typeVersion": 2,
+       "position": [
+        3960,
+        500
+       ],
+       "parameters": {
+        "jsCode": "const p = $('반영 확인').item.json;\nconst ok = $json.statusCode === 200;\nreturn [{ json: { channel: p.channel_id, thread_ts: p.thread_id,\n  text: ok ? `:white_check_mark: v${p.version} 서빙을 시작했습니다. MLflow alias \\`champion\\` 을 v${p.version} 으로 옮겼습니다.`\n           : `:warning: v${p.version} 서빙은 시작됐지만 champion 지정에 실패했습니다 (MLflow ${$json.statusCode}).`,\n  audit: { flow: 'wf-04-mlops', result: ok ? 'promote:done' : 'promote:alias_error', user_id: p.user_id, version: p.version, commit: p.commit } } }];"
+       }
+      },
+      {
+       "id": "a6466ab6-bcee-5c27-ac23-8081b02fac89",
+       "name": "포기?",
+       "type": "n8n-nodes-base.if",
+       "typeVersion": 2.2,
+       "position": [
+        3740,
+        750
+       ],
+       "parameters": {
+        "conditions": {
+         "options": {
+          "caseSensitive": true,
+          "leftValue": "",
+          "typeValidation": "loose",
+          "version": 2
+         },
+         "conditions": [
+          {
+           "id": "11344bc9-34f7-50f9-b4a5-b779b3f9fc12",
+           "leftValue": "={{ $json.give_up }}",
+           "rightValue": "",
+           "operator": {
+            "type": "boolean",
+            "operation": "true",
+            "singleValue": true
+           }
+          }
+         ],
+         "combinator": "and"
+        },
+        "options": {}
+       }
+      },
+      {
+       "id": "0be9eecc-46e0-5d66-a2af-9cb13a861059",
+       "name": "시간 초과",
+       "type": "n8n-nodes-base.code",
+       "typeVersion": 2,
+       "position": [
+        3960,
+        750
+       ],
+       "parameters": {
+        "jsCode": "const p = $json;\nreturn [{ json: { channel: p.channel_id, thread_ts: p.thread_id,\n  text: `:warning: 커밋 ${String(p.commit).slice(0, 7)} 뒤 15분이 지나도 예측 서버가 v${p.version} 로 답하지 않습니다 (지금 ${p.served ?? '응답 없음'}). 배포 CI 와 Argo CD 앱 kube-chatops-mlops-anomaly-serve 를 확인하세요. champion 은 옮기지 않았습니다.`,\n  audit: { flow: 'wf-04-mlops', result: 'promote:timeout', user_id: p.user_id, version: p.version, commit: p.commit } } }];"
+       }
+      },
+      {
+       "id": "bc191f14-81a3-5d04-a47d-d9b2031b88c1",
+       "name": "Slack 글 정리",
+       "type": "n8n-nodes-base.code",
+       "typeVersion": 2,
+       "position": [
+        4180,
+        300
+       ],
+       "parameters": {
+        "jsCode": "return [{ json: $json }];"
+       }
+      },
+      {
+       "id": "e94fe04e-9a01-574d-a8bd-78b8b7f8bfc2",
+       "name": "Slack 글",
+       "type": "n8n-nodes-base.httpRequest",
+       "typeVersion": 4.2,
+       "position": [
+        4400,
+        300
+       ],
+       "parameters": {
+        "method": "POST",
+        "url": "http://chat-gateway.aiops.svc:8080/slack/post",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ channel: $json.channel, thread_ts: $json.thread_ts, text: $json.text, blocks: $json.blocks ?? null }) }}",
+        "options": {
+         "timeout": 30000,
+         "response": {
+          "response": {
+           "fullResponse": true,
+           "neverError": true
+          }
+         }
+        }
+       },
+       "credentials": {
+        "httpHeaderAuth": {
+         "id": "kcgatewayapi0001",
+         "name": "chat-gateway API"
+        }
+       }
+      },
+      {
+       "id": "98124dc1-c0f2-5315-9ccf-99e515dc76ca",
+       "name": "감사 기록",
+       "type": "n8n-nodes-base.code",
+       "typeVersion": 2,
+       "position": [
+        4620,
+        300
+       ],
+       "parameters": {
+        "jsCode": "return [{ json: { ...($('Slack 글 정리').item.json.audit ?? { flow: 'wf-04-mlops', result: 'reply' }), slack_status: $json.statusCode, execution_id: $execution.id } }];"
+       }
+      },
+      {
+       "id": "72ef2c6d-845a-522e-816f-e73112eaac71",
+       "name": "감사 (WF-99)",
+       "type": "n8n-nodes-base.executeWorkflow",
+       "typeVersion": 1.2,
+       "position": [
+        4840,
+        300
+       ],
+       "parameters": {
+        "workflowId": {
+         "__rl": true,
+         "value": "kcwf99audit00001",
+         "mode": "id"
+        },
+        "options": {
+         "waitForSubWorkflow": false
+        }
+       }
+      }
+     ],
+     "connections": {
+      "학습 결과": {
+       "main": [
+        [
+         {
+          "node": "결과 카드",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
+      "결과 카드": {
+       "main": [
+        [
+         {
+          "node": "Slack 글 정리",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
+      "WF-01 에서 호출": {
+       "main": [
+        [
+         {
+          "node": "요청 정리",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
+      "요청 정리": {
+       "main": [
+        [
+         {
+          "node": "상태?",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
+      "상태?": {
+       "main": [
+        [
+         {
+          "node": "버전 목록",
+          "type": "main",
+          "index": 0
+         }
+        ],
+        [
+         {
+          "node": "재학습?",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
+      "버전 목록": {
+       "main": [
+        [
+         {
+          "node": "상태 카드",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
+      "상태 카드": {
+       "main": [
+        [
+         {
+          "node": "Slack 글 정리",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
+      "재학습?": {
+       "main": [
+        [
+         {
+          "node": "워크플로 제출",
+          "type": "main",
+          "index": 0
+         }
+        ],
+        [
+         {
+          "node": "승격?",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
+      "워크플로 제출": {
+       "main": [
+        [
+         {
+          "node": "재학습 답장",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
+      "재학습 답장": {
+       "main": [
+        [
+         {
+          "node": "Slack 글 정리",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
+      "승격?": {
+       "main": [
+        [
+         {
+          "node": "버전 조회",
+          "type": "main",
+          "index": 0
+         }
+        ],
+        [
+         {
+          "node": "권한 없음",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
+      "권한 없음": {
+       "main": [
+        [
+         {
+          "node": "Slack 글 정리",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
+      "버전 조회": {
+       "main": [
+        [
+         {
+          "node": "승격 준비",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
+      "승격 준비": {
+       "main": [
+        [
+         {
+          "node": "이미 champion?",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
+      "이미 champion?": {
+       "main": [
+        [
+         {
+          "node": "이미 서빙 중",
+          "type": "main",
+          "index": 0
+         }
+        ],
+        [
+         {
+          "node": "파일 읽기",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
+      "이미 서빙 중": {
+       "main": [
+        [
+         {
+          "node": "Slack 글 정리",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
+      "파일 읽기": {
+       "main": [
+        [
+         {
+          "node": "파일 고치기",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
+      "파일 고치기": {
+       "main": [
+        [
+         {
+          "node": "커밋",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
+      "커밋": {
+       "main": [
+        [
+         {
+          "node": "커밋 완료",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
+      "커밋 완료": {
+       "main": [
+        [
+         {
+          "node": "커밋 알림",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
+      "커밋 알림": {
+       "main": [
+        [
+         {
+          "node": "1분 대기",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
+      "1분 대기": {
+       "main": [
+        [
+         {
+          "node": "서빙 모델 확인",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
+      "서빙 모델 확인": {
+       "main": [
+        [
+         {
+          "node": "반영 확인",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
+      "반영 확인": {
+       "main": [
+        [
+         {
+          "node": "반영됨?",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
+      "반영됨?": {
+       "main": [
+        [
+         {
+          "node": "champion 지정",
+          "type": "main",
+          "index": 0
+         }
+        ],
+        [
+         {
+          "node": "포기?",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
+      "champion 지정": {
+       "main": [
+        [
+         {
+          "node": "완료 답장",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
+      "완료 답장": {
+       "main": [
+        [
+         {
+          "node": "Slack 글 정리",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
+      "포기?": {
+       "main": [
+        [
+         {
+          "node": "시간 초과",
+          "type": "main",
+          "index": 0
+         }
+        ],
+        [
+         {
+          "node": "1분 대기",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
+      "시간 초과": {
+       "main": [
+        [
+         {
+          "node": "Slack 글 정리",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
+      "Slack 글 정리": {
+       "main": [
+        [
+         {
+          "node": "Slack 글",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
+      "Slack 글": {
        "main": [
         [
          {

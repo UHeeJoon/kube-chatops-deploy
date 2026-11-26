@@ -7,6 +7,12 @@ def panel(kind, title, exprs, x, w, h, unit=None, desc=None, **extra):
          "targets": [{"expr": e, "legendFormat": l, "refId": chr(65 + i), "datasource": DS} for i, (e, l) in enumerate(exprs)],
          "fieldConfig": {"defaults": {}, "overrides": []}, "options": {}}
     if unit: p["fieldConfig"]["defaults"]["unit"] = unit
+    if any("$__interval" in e for e, _ in exprs):
+        # 구간 합계 막대: 겹치는 이동 창([1h])을 30초마다 찍으면 조사 한 번이 한 시간 내내 같은 높이 막대로 반복된다.
+        # 겹치지 않는 구간으로 나눠, 막대 하나가 그 구간에 실제로 쓴 양이 되게 한다.
+        p.update({"interval": "5m", "maxDataPoints": 48})
+        p["fieldConfig"]["defaults"].setdefault("custom", {}).update({"drawStyle": "bars", "fillOpacity": 80})
+        desc = (desc + ". " if desc else "") + "막대 하나 = 한 구간의 합 (15분 보기 5분, 24시간 보기 30분)"
     if desc: p["description"] = desc
     for k, v in extra.items():
         if k == "defaults": p["fieldConfig"]["defaults"].update(v)
@@ -28,29 +34,29 @@ panel("stat", "조사 1건 평균 비용 (24h)", [(f'sum(increase({COST}{{stage=
       14, 4, 5, "currencyUSD", "요청당 상한 MAX_REQUEST_USD 와 비교", defaults={"decimals": 3})
 panel("stat", "프롬프트 캐시 적중률 (24h)", [(f'sum(increase({TOK}{{kind="cache_read"}}[24h])) / sum(increase({TOK}{{kind=~"input|cache_read|cache_write"}}[24h]))', "")],
       18, 3, 5, "percentunit", "입력 토큰 중 캐시에서 읽은 비율. 높을수록 싸다 (캐시 읽기는 입력 단가의 0.1배)", defaults={**thr((None, "red"), (0.3, "orange"), (0.6, "green"))})
-panel("stat", "조사 수 (24h)", [('sum(increase(agent_requests_total{api="investigate",status="200"}[24h]))', "")], 21, 3, 5, defaults={"decimals": 0})
+panel("stat", "조사 수 (24h)", [('round(sum(increase(agent_requests_total{api="investigate",status="200"}[24h])))', "")], 21, 3, 5, defaults={"decimals": 0})
 y += 5
 
 row("비용과 토큰")
-panel("timeseries", "시간당 비용 (단계별)", [(f"sum by (stage) (increase({COST}[1h]))", "{{stage}}")], 0, 12, 8, "currencyUSD",
+panel("timeseries", "비용 (단계별, 구간별)", [(f"sum by (stage) (increase({COST}[$__interval]))", "{{stage}}")], 0, 12, 8, "currencyUSD",
       "route: 의도 분류, investigate: 도구 루프, report: 최종 보고서", defaults={"custom": {"drawStyle": "bars", "stacking": {"mode": "normal"}, "fillOpacity": 80}})
-panel("timeseries", "토큰 (종류별, 시간당)", [(f"sum by (kind) (increase({TOK}[1h]))", "{{kind}}")], 12, 12, 8, "short",
+panel("timeseries", "토큰 (종류별, 구간별)", [(f"sum by (kind) (increase({TOK}[$__interval]))", "{{kind}}")], 12, 12, 8, "short",
       "input: 캐시 안 된 입력, cache_write: 캐시에 쓴 입력(1.25배), cache_read: 캐시에서 읽은 입력(0.1배), output: 출력",
       defaults={"custom": {"drawStyle": "bars", "stacking": {"mode": "normal"}, "fillOpacity": 80}})
 y += 8
-panel("timeseries", "모델별 비용 (시간당)", [(f"sum by (model) (increase({COST}[1h]))", "{{model}}")], 0, 12, 7, "currencyUSD", "fallback 으로 다른 모델이 응답하면 여기 따로 보인다")
+panel("timeseries", "모델별 비용 (구간별)", [(f"sum by (model) (increase({COST}[$__interval]))", "{{model}}")], 0, 12, 7, "currencyUSD", "fallback 으로 다른 모델이 응답하면 여기 따로 보인다")
 panel("timeseries", "오늘 누적 사용액 vs 예산", [("max(agent_budget_spent_today_usd)", "사용액"), ("max(agent_budget_daily_limit_usd)", "예산")], 12, 12, 7, "currencyUSD")
 y += 7
 
 row("요청과 조사")
-panel("timeseries", "API 요청 (시간당)", [("sum by (api, status) (increase(agent_requests_total[1h]))", "{{api}} {{status}}")], 0, 8, 7, "short", "401: 토큰 오류, 429: 예산 초과, 500: 내부 오류")
-panel("bargauge", "조사 종료 이유 (24h)", [("sum by (reason) (increase(agent_investigation_stops_total[24h]))", "{{reason}}")], 8, 8, 7, "short",
+panel("timeseries", "API 요청 (구간별)", [("sum by (api, status) (increase(agent_requests_total[$__interval]))", "{{api}} {{status}}")], 0, 8, 7, "short", "401: 토큰 오류, 429: 예산 초과, 500: 내부 오류")
+panel("bargauge", "조사 종료 이유 (24h)", [("round(sum by (reason) (increase(agent_investigation_stops_total[24h])))", "{{reason}}")], 8, 8, 7, "short",
       "done: 정상, llm_calls / tool_calls / time / cost: 상한 도달, refusal: 모델 거절", options={"displayMode": "basic", "orientation": "horizontal"})
 panel("timeseries", "처리 시간 p95", [("histogram_quantile(0.95, sum by (le, api) (rate(agent_request_duration_seconds_bucket[$__rate_interval])))", "{{api}}")], 16, 8, 7, "s")
 y += 7
 
 row("MCP 도구")
-panel("timeseries", "도구 호출 (시간당)", [("sum by (server, tool) (increase(agent_tool_calls_total[1h]))", "{{server}}/{{tool}}")], 0, 10, 8, "short", "도구 호출이 많을수록 입력 토큰이 늘어난다")
+panel("timeseries", "도구 호출 (구간별)", [("sum by (server, tool) (increase(agent_tool_calls_total[$__interval]))", "{{server}}/{{tool}}")], 0, 10, 8, "short", "도구 호출이 많을수록 입력 토큰이 늘어난다")
 panel("timeseries", "도구 실행 p95 (MCP 서버)", [("histogram_quantile(0.95, sum by (le, job, tool) (rate(mcp_tool_duration_seconds_bucket[$__rate_interval])))", "{{job}}/{{tool}}")], 10, 8, 8, "s")
 panel("stat", "도구 오류 (24h)", [('sum(increase(agent_tool_calls_total{status="error"}[24h]))', "")], 18, 3, 4, "short", defaults=thr((None, "green"), (1, "orange")))
 panel("stat", "MCP 인증 실패 (24h)", [("sum(increase(mcp_auth_failures_total[24h]))", "")], 21, 3, 4, "short", "0 이 아니면 토큰 불일치 또는 무단 접근 시도", defaults=thr((None, "green"), (1, "red")))

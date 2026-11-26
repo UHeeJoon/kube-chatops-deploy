@@ -1,6 +1,7 @@
 # 학습 파이프라인 스텝 파드 (Argo Workflows, 라벨 app.kubernetes.io/name=anomaly-train)
 # 들어옴: 없음.
-# 나감: Prometheus(9090), MinIO(storage:9000), MLflow(5000), kube-apiserver(Argo 실행기가 스텝 결과를 기록). DNS 는 기준선이 허용.
+# 나감: Prometheus(9090), MinIO(storage:9000), MLflow(5000), n8n(aiops:5678, 학습 결과 알림),
+#       kube-apiserver(Argo 실행기가 스텝 결과를 기록). DNS 는 기준선이 허용.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata: { name: anomaly-train, namespace: mlops }
@@ -28,6 +29,13 @@ spec:
             matchLabels: { app.kubernetes.io/name: mlflow }
       ports:
         - { port: 5000, protocol: TCP }
+    - to:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: aiops }
+          podSelector:
+            matchLabels: { app.kubernetes.io/name: n8n }
+      ports:
+        - { port: 5678, protocol: TCP }
 ---
 # Argo 실행기(argoexec)가 WorkflowTaskResult 를 쓰려면 apiserver 에 닿아야 한다.
 # Cilium 은 apiserver 를 예약 신원으로 보므로 NetworkPolicy 가 아니라 CiliumNetworkPolicy 로 연다.

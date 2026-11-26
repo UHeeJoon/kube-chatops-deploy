@@ -1,0 +1,14 @@
+# MLflow 화면 (실험 기록, 지표 비교, 모델 버전): http://mlflow.ascode.click
+# 클러스터 밖 노출은 Cloudflare Tunnel + Access 로만 (MLflow 자체 인증은 없다).
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: mlflow
+  namespace: mlops
+spec:
+  parentRefs:
+    - { name: admin-gateway, namespace: ingress }
+  hostnames: [mlflow.ascode.click]
+  rules:
+    - backendRefs:
+        - { name: mlflow, port: 5000 }

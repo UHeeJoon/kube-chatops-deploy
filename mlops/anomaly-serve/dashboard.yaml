@@ -1,0 +1,765 @@
+# Grafana 대시보드: 이상 탐지 모델 (지금 판정, 판정 vs 실제 장애, 특성별 z-score, 입력 지표).
+# Grafana 사이드카가 모든 ns 에서 grafana_dashboard=1 라벨 ConfigMap 을 읽는다.
+# 수정은 Grafana 에서 하지 말고 생성기에서: python3 scripts/gen-anomaly-dashboard.py mlops/anomaly-serve/dashboard.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: anomaly-model-dashboard
+  namespace: mlops
+  labels:
+    grafana_dashboard: "1"
+data:
+  kube-chatops-anomaly-model.json: |
+    {
+     "uid": "kube-chatops-anomaly-model",
+     "title": "kube-chatops / 이상 탐지 모델",
+     "tags": [
+      "kube-chatops",
+      "mlops"
+     ],
+     "timezone": "Asia/Seoul",
+     "refresh": "1m",
+     "time": {
+      "from": "now-6h",
+      "to": "now"
+     },
+     "schemaVersion": 39,
+     "editable": true,
+     "templating": {
+      "list": [
+       {
+        "name": "datasource",
+        "label": "Prometheus",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {},
+        "hide": 0
+       }
+      ]
+     },
+     "panels": [
+      {
+       "type": "row",
+       "title": "지금",
+       "collapsed": false,
+       "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 1
+       },
+       "panels": []
+      },
+      {
+       "type": "stat",
+       "title": "지금 판정 (마지막 1분)",
+       "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+       },
+       "gridPos": {
+        "x": 0,
+        "y": 1,
+        "w": 4,
+        "h": 5
+       },
+       "targets": [
+        {
+         "expr": "max(anomaly_model_is_anomaly{rule=\"hybrid\"})",
+         "legendFormat": "",
+         "refId": "A",
+         "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+         }
+        }
+       ],
+       "fieldConfig": {
+        "defaults": {
+         "mappings": [
+          {
+           "type": "value",
+           "options": {
+            "0": {
+             "text": "정상",
+             "color": "green"
+            },
+            "1": {
+             "text": "이상",
+             "color": "red"
+            }
+           }
+          }
+         ],
+         "thresholds": {
+          "mode": "absolute",
+          "steps": [
+           {
+            "color": "green",
+            "value": null
+           },
+           {
+            "color": "red",
+            "value": 1
+           }
+          ]
+         }
+        },
+        "overrides": []
+       },
+       "options": {
+        "colorMode": "background"
+       },
+       "description": "혼합 규칙: IsolationForest 점수가 경계를 넘거나, 한 특성이라도 |z| ≥ 4 이면 이상"
+      },
+      {
+       "type": "stat",
+       "title": "가장 크게 벗어난 특성",
+       "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+       },
+       "gridPos": {
+        "x": 4,
+        "y": 1,
+        "w": 5,
+        "h": 5
+       },
+       "targets": [
+        {
+         "expr": "topk(1, abs(max by (feature) (anomaly_model_feature_z)))",
+         "legendFormat": "{{feature}}",
+         "refId": "A",
+         "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+         }
+        }
+       ],
+       "fieldConfig": {
+        "defaults": {
+         "decimals": 1,
+         "thresholds": {
+          "mode": "absolute",
+          "steps": [
+           {
+            "color": "green",
+            "value": null
+           },
+           {
+            "color": "orange",
+            "value": 3
+           },
+           {
+            "color": "red",
+            "value": 4
+           }
+          ]
+         }
+        },
+        "overrides": []
+       },
+       "options": {
+        "textMode": "value_and_name",
+        "colorMode": "value"
+       },
+       "description": "평소(학습 기간) 대비 몇 표준편차인지. 4 이상이면 이상. 모델 v1 은 특성별 z 를 내보내지 않아 비어 있다"
+      },
+      {
+       "type": "stat",
+       "title": "서빙 중인 모델",
+       "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+       },
+       "gridPos": {
+        "x": 9,
+        "y": 1,
+        "w": 6,
+        "h": 5
+       },
+       "targets": [
+        {
+         "expr": "max by (model_version) (anomaly_model_info)",
+         "legendFormat": "{{model_version}}",
+         "refId": "A",
+         "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+         }
+        }
+       ],
+       "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+       },
+       "options": {
+        "textMode": "name",
+        "colorMode": "none"
+       },
+       "description": "MLflow model id. 레지스트리 버전과 지표는 MLflow 화면에서 본다"
+      },
+      {
+       "type": "stat",
+       "title": "이상 판정 (24h)",
+       "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+       },
+       "gridPos": {
+        "x": 15,
+        "y": 1,
+        "w": 4,
+        "h": 5
+       },
+       "targets": [
+        {
+         "expr": "avg_over_time(max(anomaly_model_is_anomaly{rule=\"hybrid\"})[24h:1m]) * 1440",
+         "legendFormat": "",
+         "refId": "A",
+         "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+         }
+        }
+       ],
+       "fieldConfig": {
+        "defaults": {
+         "unit": "m",
+         "decimals": 0
+        },
+        "overrides": []
+       },
+       "options": {},
+       "description": "지난 24시간 중 이상으로 판정한 분 수"
+      },
+      {
+       "type": "stat",
+       "title": "모니터 마지막 판정",
+       "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+       },
+       "gridPos": {
+        "x": 19,
+        "y": 1,
+        "w": 5,
+        "h": 5
+       },
+       "targets": [
+        {
+         "expr": "time() - max(anomaly_monitor_last_success_timestamp_seconds)",
+         "legendFormat": "",
+         "refId": "A",
+         "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+         }
+        }
+       ],
+       "fieldConfig": {
+        "defaults": {
+         "unit": "s",
+         "decimals": 0,
+         "thresholds": {
+          "mode": "absolute",
+          "steps": [
+           {
+            "color": "green",
+            "value": null
+           },
+           {
+            "color": "orange",
+            "value": 180
+           },
+           {
+            "color": "red",
+            "value": 600
+           }
+          ]
+         }
+        },
+        "overrides": []
+       },
+       "options": {},
+       "description": "mcp-anomaly 모니터가 마지막으로 판정에 성공한 뒤 지난 시간. 3분을 넘으면 Prometheus 나 예측 서버 연결을 확인"
+      },
+      {
+       "type": "row",
+       "title": "모델 판정과 실제 장애 주입",
+       "collapsed": false,
+       "gridPos": {
+        "x": 0,
+        "y": 6,
+        "w": 24,
+        "h": 1
+       },
+       "panels": []
+      },
+      {
+       "type": "timeseries",
+       "title": "판정 vs 정답",
+       "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+       },
+       "gridPos": {
+        "x": 0,
+        "y": 7,
+        "w": 24,
+        "h": 7
+       },
+       "targets": [
+        {
+         "expr": "max(anomaly_model_is_anomaly{rule=\"hybrid\"})",
+         "legendFormat": "모델 판정 (혼합)",
+         "refId": "A",
+         "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+         }
+        },
+        {
+         "expr": "max by (kind) (demo_chaos_active{namespace=\"demo\"}) * 0.8",
+         "legendFormat": "정답: {{kind}} 주입",
+         "refId": "B",
+         "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+         }
+        }
+       ],
+       "fieldConfig": {
+        "defaults": {
+         "custom": {
+          "drawStyle": "line",
+          "lineInterpolation": "stepAfter",
+          "fillOpacity": 25,
+          "lineWidth": 1
+         },
+         "min": 0,
+         "max": 1.05
+        },
+        "overrides": [
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "모델 판정 (혼합)"
+          },
+          "properties": [
+           {
+            "id": "color",
+            "value": {
+             "mode": "fixed",
+             "fixedColor": "red"
+            }
+           }
+          ]
+         },
+         {
+          "matcher": {
+           "id": "byRegexp",
+           "options": "정답: .*"
+          },
+          "properties": [
+           {
+            "id": "color",
+            "value": {
+             "mode": "fixed",
+             "fixedColor": "blue"
+            }
+           }
+          ]
+         }
+        ]
+       },
+       "options": {},
+       "description": "모델이 이상이라 본 시간(빨강)과 실제로 장애를 주입한 시간(정답, 높이 0.8)이 겹치면 맞힌 것. 주입 직후 2~3분은 지표(2분 rate)가 늦게 따라온다"
+      },
+      {
+       "type": "timeseries",
+       "title": "특성별 z-score (왜 이상인가)",
+       "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+       },
+       "gridPos": {
+        "x": 0,
+        "y": 14,
+        "w": 14,
+        "h": 8
+       },
+       "targets": [
+        {
+         "expr": "max by (feature) (anomaly_model_feature_z)",
+         "legendFormat": "{{feature}}",
+         "refId": "A",
+         "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+         }
+        }
+       ],
+       "fieldConfig": {
+        "defaults": {
+         "custom": {
+          "thresholdsStyle": {
+           "mode": "line+area"
+          },
+          "fillOpacity": 0
+         },
+         "thresholds": {
+          "mode": "absolute",
+          "steps": [
+           {
+            "color": "transparent",
+            "value": null
+           },
+           {
+            "color": "red",
+            "value": 4
+           }
+          ]
+         }
+        },
+        "overrides": []
+       },
+       "options": {},
+       "description": "+ 는 평소보다 큼, - 는 작음. 점선 ±4 를 넘으면 그 특성만으로 이상 판정. 모델 v2 부터 나온다"
+      },
+      {
+       "type": "timeseries",
+       "title": "규칙별 판정",
+       "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+       },
+       "gridPos": {
+        "x": 14,
+        "y": 14,
+        "w": 10,
+        "h": 4
+       },
+       "targets": [
+        {
+         "expr": "max by (rule) (anomaly_model_is_anomaly{rule=~\"iforest|zscore\"})",
+         "legendFormat": "{{rule}}",
+         "refId": "A",
+         "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+         }
+        }
+       ],
+       "fieldConfig": {
+        "defaults": {
+         "custom": {
+          "drawStyle": "line",
+          "lineInterpolation": "stepAfter",
+          "fillOpacity": 25,
+          "lineWidth": 1
+         },
+         "min": 0,
+         "max": 1.05
+        },
+        "overrides": []
+       },
+       "options": {},
+       "description": "iforest: 여러 지표의 조합이 평소와 다름. zscore: 한 지표가 크게 벗어남"
+      },
+      {
+       "type": "timeseries",
+       "title": "IsolationForest 이상 점수",
+       "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+       },
+       "gridPos": {
+        "x": 14,
+        "y": 18,
+        "w": 10,
+        "h": 4
+       },
+       "targets": [
+        {
+         "expr": "max(anomaly_model_score)",
+         "legendFormat": "점수",
+         "refId": "A",
+         "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+         }
+        }
+       ],
+       "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+       },
+       "options": {},
+       "description": "클수록 이상. 경계는 학습 정상 구간 점수의 상위 0.1% (MLflow run 의 threshold 지표)"
+      },
+      {
+       "type": "row",
+       "title": "모델에 들어가는 값 (1분 단위)",
+       "collapsed": false,
+       "gridPos": {
+        "x": 0,
+        "y": 22,
+        "w": 24,
+        "h": 1
+       },
+       "panels": []
+      },
+      {
+       "type": "timeseries",
+       "title": "요청 수",
+       "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+       },
+       "gridPos": {
+        "x": 0,
+        "y": 23,
+        "w": 6,
+        "h": 6
+       },
+       "targets": [
+        {
+         "expr": "sum(rate(http_requests_total{namespace=\"demo\", path!~\"/chaos/.*|/metrics|/healthz.*\"}[2m]))",
+         "legendFormat": "rps",
+         "refId": "A",
+         "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+         }
+        }
+       ],
+       "fieldConfig": {
+        "defaults": {
+         "unit": "reqps"
+        },
+        "overrides": []
+       },
+       "options": {}
+      },
+      {
+       "type": "timeseries",
+       "title": "5xx 비율",
+       "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+       },
+       "gridPos": {
+        "x": 6,
+        "y": 23,
+        "w": 6,
+        "h": 6
+       },
+       "targets": [
+        {
+         "expr": "sum(rate(http_requests_total{namespace=\"demo\", path!~\"/chaos/.*|/metrics|/healthz.*\", status=~\"5..\"}[2m])) / sum(rate(http_requests_total{namespace=\"demo\", path!~\"/chaos/.*|/metrics|/healthz.*\"}[2m]))",
+         "legendFormat": "error_ratio",
+         "refId": "A",
+         "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+         }
+        }
+       ],
+       "fieldConfig": {
+        "defaults": {
+         "unit": "percentunit"
+        },
+        "overrides": []
+       },
+       "options": {}
+      },
+      {
+       "type": "timeseries",
+       "title": "p95 지연",
+       "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+       },
+       "gridPos": {
+        "x": 12,
+        "y": 23,
+        "w": 6,
+        "h": 6
+       },
+       "targets": [
+        {
+         "expr": "histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{namespace=\"demo\", path!~\"/chaos/.*|/metrics|/healthz.*\"}[2m])))",
+         "legendFormat": "p95",
+         "refId": "A",
+         "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+         }
+        }
+       ],
+       "fieldConfig": {
+        "defaults": {
+         "unit": "s"
+        },
+        "overrides": []
+       },
+       "options": {}
+      },
+      {
+       "type": "timeseries",
+       "title": "메모리 사용률 (한도 대비, 최대 파드)",
+       "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+       },
+       "gridPos": {
+        "x": 18,
+        "y": 23,
+        "w": 6,
+        "h": 6
+       },
+       "targets": [
+        {
+         "expr": "max(max by (pod) (container_memory_working_set_bytes{namespace=\"demo\", container=\"app\"}) / max by (pod) (kube_pod_container_resource_limits{namespace=\"demo\", container=\"app\", resource=\"memory\"}))",
+         "legendFormat": "mem_ratio",
+         "refId": "A",
+         "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+         }
+        }
+       ],
+       "fieldConfig": {
+        "defaults": {
+         "unit": "percentunit",
+         "max": 1
+        },
+        "overrides": []
+       },
+       "options": {}
+      },
+      {
+       "type": "row",
+       "title": "서빙과 도구",
+       "collapsed": false,
+       "gridPos": {
+        "x": 0,
+        "y": 29,
+        "w": 24,
+        "h": 1
+       },
+       "panels": []
+      },
+      {
+       "type": "timeseries",
+       "title": "detect_anomalies 호출 (구간별)",
+       "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+       },
+       "gridPos": {
+        "x": 0,
+        "y": 30,
+        "w": 8,
+        "h": 6
+       },
+       "targets": [
+        {
+         "expr": "sum by (status) (increase(mcp_tool_calls_total{job=\"mcp-anomaly\"}[$__interval]))",
+         "legendFormat": "{{status}}",
+         "refId": "A",
+         "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+         }
+        }
+       ],
+       "fieldConfig": {
+        "defaults": {
+         "unit": "short",
+         "custom": {
+          "drawStyle": "bars",
+          "fillOpacity": 80,
+          "stacking": {
+           "mode": "normal"
+          }
+         }
+        },
+        "overrides": []
+       },
+       "options": {},
+       "interval": "5m",
+       "maxDataPoints": 48,
+       "description": "에이전트가 조사 중에 이상 탐지 도구를 부른 횟수. 막대 하나 = 한 구간의 합 (15분 보기 5분, 24시간 보기 30분)"
+      },
+      {
+       "type": "timeseries",
+       "title": "모니터 판정 (구간별)",
+       "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+       },
+       "gridPos": {
+        "x": 8,
+        "y": 30,
+        "w": 8,
+        "h": 6
+       },
+       "targets": [
+        {
+         "expr": "sum by (status) (increase(anomaly_monitor_runs_total[$__interval]))",
+         "legendFormat": "{{status}}",
+         "refId": "A",
+         "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+         }
+        }
+       ],
+       "fieldConfig": {
+        "defaults": {
+         "unit": "short",
+         "custom": {
+          "drawStyle": "bars",
+          "fillOpacity": 80,
+          "stacking": {
+           "mode": "normal"
+          }
+         }
+        },
+        "overrides": []
+       },
+       "options": {},
+       "interval": "5m",
+       "maxDataPoints": 48,
+       "description": "막대 하나 = 한 구간의 합 (15분 보기 5분, 24시간 보기 30분)"
+      },
+      {
+       "type": "text",
+       "title": "더 보기",
+       "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+       },
+       "gridPos": {
+        "x": 16,
+        "y": 30,
+        "w": 8,
+        "h": 6
+       },
+       "targets": [],
+       "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+       },
+       "options": {
+        "mode": "markdown",
+        "content": "- **MLflow** (실험, 지표 비교, 모델 버전): http://mlflow.ascode.click\n- **Argo Workflows** (학습 파이프라인 실행 기록): http://workflows.ascode.click\n- Slack 에서 봇에게 \"이상 탐지 모델 상태\" 라고 물으면 버전 목록과 재학습·승격 버튼이 온다"
+       }
+      }
+     ],
+     "annotations": {
+      "list": []
+     }
+    }

@@ -1,5 +1,5 @@
 # mlflow
-# 들어옴: mlops ns 안(학습 파이프라인 스텝)의 5000.
+# 들어옴: mlops ns 안(학습 파이프라인 스텝), aiops n8n(WF-04 버전 조회·champion 지정), admin-gateway(화면) 의 5000.
 # 나감: aiops-pg(5432), MinIO(storage:9000). DNS 는 기준선이 허용.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -11,6 +11,10 @@ spec:
   ingress:
     - from:
         - podSelector: {}
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: aiops }
+          podSelector:
+            matchLabels: { app.kubernetes.io/name: n8n }
       ports:
         - { port: 5000, protocol: TCP }
   egress:
@@ -28,3 +32,16 @@ spec:
             matchLabels: { v1.min.io/tenant: myminio }
       ports:
         - { port: 9000, protocol: TCP }
+---
+# admin-gateway(mlflow.ascode.click) 트래픽은 Cilium 예약 신원 ingress 로 들어온다
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata: { name: mlflow-gateway, namespace: mlops }
+spec:
+  endpointSelector:
+    matchLabels: { app.kubernetes.io/name: mlflow }
+  ingress:
+    - fromEntities: [ingress]
+      toPorts:
+        - ports:
+            - { port: "5000", protocol: TCP }

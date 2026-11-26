@@ -1,0 +1,20 @@
+# n8n(aiops ns, ServiceAccount n8n-mlops)이 Slack 재학습 버튼으로 워크플로를 제출할 수 있게 한다.
+# 만들기만 한다. 실행 권한(파드 생성 등)은 워크플로의 ServiceAccount argo-workflow 가 가진다.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: n8n-submit-workflow
+  namespace: mlops
+rules:
+  - apiGroups: [argoproj.io]
+    resources: [workflows]
+    verbs: [create]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: n8n-submit-workflow
+  namespace: mlops
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: Role, name: n8n-submit-workflow }
+subjects:
+  - { kind: ServiceAccount, name: n8n-mlops, namespace: aiops }

@@ -40,7 +40,7 @@ spec:
             - { name: MLFLOW_SERVER_ENABLE_JOB_EXECUTION, value: "false" }
             # Host 헤더 검사 (DNS rebinding 방지). 기본값은 localhost 와 사설 IP 뿐이라 서비스 이름을 넣는다.
             - name: MLFLOW_SERVER_ALLOWED_HOSTS
-              value: "mlflow.mlops.svc.cluster.local:5000,mlflow.mlops.svc:5000,mlflow.mlops:5000,mlflow:5000,localhost:*,127.0.0.1:*"
+              value: "mlflow.ascode.click,mlflow.ascode.click:*,mlflow.mlops.svc.cluster.local:5000,mlflow.mlops.svc:5000,mlflow.mlops:5000,mlflow:5000,localhost:*,127.0.0.1:*"
           resources:
             requests: { cpu: 100m, memory: 384Mi }
             limits: { memory: 1Gi }

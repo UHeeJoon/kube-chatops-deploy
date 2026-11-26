@@ -301,7 +301,7 @@ data:
        },
        "targets": [
         {
-         "expr": "sum(increase(agent_requests_total{api=\"investigate\",status=\"200\"}[24h]))",
+         "expr": "round(sum(increase(agent_requests_total{api=\"investigate\",status=\"200\"}[24h])))",
          "legendFormat": "",
          "refId": "A",
          "datasource": {
@@ -332,7 +332,7 @@ data:
       },
       {
        "type": "timeseries",
-       "title": "시간당 비용 (단계별)",
+       "title": "비용 (단계별, 구간별)",
        "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -345,7 +345,7 @@ data:
        },
        "targets": [
         {
-         "expr": "sum by (stage) (increase(agent_llm_cost_usd_total[1h]))",
+         "expr": "sum by (stage) (increase(agent_llm_cost_usd_total[$__interval]))",
          "legendFormat": "{{stage}}",
          "refId": "A",
          "datasource": {
@@ -368,11 +368,13 @@ data:
         "overrides": []
        },
        "options": {},
-       "description": "route: 의도 분류, investigate: 도구 루프, report: 최종 보고서"
+       "interval": "5m",
+       "maxDataPoints": 48,
+       "description": "route: 의도 분류, investigate: 도구 루프, report: 최종 보고서. 막대 하나 = 한 구간의 합 (15분 보기 5분, 24시간 보기 30분)"
       },
       {
        "type": "timeseries",
-       "title": "토큰 (종류별, 시간당)",
+       "title": "토큰 (종류별, 구간별)",
        "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -385,7 +387,7 @@ data:
        },
        "targets": [
         {
-         "expr": "sum by (kind) (increase(agent_llm_tokens_total[1h]))",
+         "expr": "sum by (kind) (increase(agent_llm_tokens_total[$__interval]))",
          "legendFormat": "{{kind}}",
          "refId": "A",
          "datasource": {
@@ -408,11 +410,13 @@ data:
         "overrides": []
        },
        "options": {},
-       "description": "input: 캐시 안 된 입력, cache_write: 캐시에 쓴 입력(1.25배), cache_read: 캐시에서 읽은 입력(0.1배), output: 출력"
+       "interval": "5m",
+       "maxDataPoints": 48,
+       "description": "input: 캐시 안 된 입력, cache_write: 캐시에 쓴 입력(1.25배), cache_read: 캐시에서 읽은 입력(0.1배), output: 출력. 막대 하나 = 한 구간의 합 (15분 보기 5분, 24시간 보기 30분)"
       },
       {
        "type": "timeseries",
-       "title": "모델별 비용 (시간당)",
+       "title": "모델별 비용 (구간별)",
        "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -425,7 +429,7 @@ data:
        },
        "targets": [
         {
-         "expr": "sum by (model) (increase(agent_llm_cost_usd_total[1h]))",
+         "expr": "sum by (model) (increase(agent_llm_cost_usd_total[$__interval]))",
          "legendFormat": "{{model}}",
          "refId": "A",
          "datasource": {
@@ -436,12 +440,18 @@ data:
        ],
        "fieldConfig": {
         "defaults": {
-         "unit": "currencyUSD"
+         "unit": "currencyUSD",
+         "custom": {
+          "drawStyle": "bars",
+          "fillOpacity": 80
+         }
         },
         "overrides": []
        },
        "options": {},
-       "description": "fallback 으로 다른 모델이 응답하면 여기 따로 보인다"
+       "interval": "5m",
+       "maxDataPoints": 48,
+       "description": "fallback 으로 다른 모델이 응답하면 여기 따로 보인다. 막대 하나 = 한 구간의 합 (15분 보기 5분, 24시간 보기 30분)"
       },
       {
        "type": "timeseries",
@@ -498,7 +508,7 @@ data:
       },
       {
        "type": "timeseries",
-       "title": "API 요청 (시간당)",
+       "title": "API 요청 (구간별)",
        "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -511,7 +521,7 @@ data:
        },
        "targets": [
         {
-         "expr": "sum by (api, status) (increase(agent_requests_total[1h]))",
+         "expr": "sum by (api, status) (increase(agent_requests_total[$__interval]))",
          "legendFormat": "{{api}} {{status}}",
          "refId": "A",
          "datasource": {
@@ -522,12 +532,18 @@ data:
        ],
        "fieldConfig": {
         "defaults": {
-         "unit": "short"
+         "unit": "short",
+         "custom": {
+          "drawStyle": "bars",
+          "fillOpacity": 80
+         }
         },
         "overrides": []
        },
        "options": {},
-       "description": "401: 토큰 오류, 429: 예산 초과, 500: 내부 오류"
+       "interval": "5m",
+       "maxDataPoints": 48,
+       "description": "401: 토큰 오류, 429: 예산 초과, 500: 내부 오류. 막대 하나 = 한 구간의 합 (15분 보기 5분, 24시간 보기 30분)"
       },
       {
        "type": "bargauge",
@@ -544,7 +560,7 @@ data:
        },
        "targets": [
         {
-         "expr": "sum by (reason) (increase(agent_investigation_stops_total[24h]))",
+         "expr": "round(sum by (reason) (increase(agent_investigation_stops_total[24h])))",
          "legendFormat": "{{reason}}",
          "refId": "A",
          "datasource": {
@@ -611,7 +627,7 @@ data:
       },
       {
        "type": "timeseries",
-       "title": "도구 호출 (시간당)",
+       "title": "도구 호출 (구간별)",
        "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -624,7 +640,7 @@ data:
        },
        "targets": [
         {
-         "expr": "sum by (server, tool) (increase(agent_tool_calls_total[1h]))",
+         "expr": "sum by (server, tool) (increase(agent_tool_calls_total[$__interval]))",
          "legendFormat": "{{server}}/{{tool}}",
          "refId": "A",
          "datasource": {
@@ -635,12 +651,18 @@ data:
        ],
        "fieldConfig": {
         "defaults": {
-         "unit": "short"
+         "unit": "short",
+         "custom": {
+          "drawStyle": "bars",
+          "fillOpacity": 80
+         }
         },
         "overrides": []
        },
        "options": {},
-       "description": "도구 호출이 많을수록 입력 토큰이 늘어난다"
+       "interval": "5m",
+       "maxDataPoints": 48,
+       "description": "도구 호출이 많을수록 입력 토큰이 늘어난다. 막대 하나 = 한 구간의 합 (15분 보기 5분, 24시간 보기 30분)"
       },
       {
        "type": "timeseries",

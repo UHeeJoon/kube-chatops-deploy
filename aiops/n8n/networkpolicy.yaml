@@ -1,6 +1,7 @@
 # n8n
-# 들어옴: aiops 내부(chat-gateway 등), monitoring(Alertmanager webhook, 스크레이프는 기준선), admin-gateway.
-# 나감: aiops 내부(DB, agent), 외부 HTTPS(Slack 등). 클러스터 안 다른 네임스페이스는 필요할 때 추가한다.
+# 들어옴: aiops 내부(chat-gateway 등), monitoring(Alertmanager webhook, 스크레이프는 기준선), admin-gateway,
+#        mlops 학습 파이프라인(결과 webhook).
+# 나감: aiops 내부(DB, agent), 외부 HTTPS(Slack, GitHub), mlops 의 MLflow(5000)·예측 서버(8080), kube-apiserver(워크플로 제출).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata: { name: n8n, namespace: aiops }
@@ -13,11 +14,29 @@ spec:
         - podSelector: {}
         - namespaceSelector:
             matchLabels: { kubernetes.io/metadata.name: monitoring }
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: mlops }
+          podSelector:
+            matchLabels: { app.kubernetes.io/name: anomaly-train }
       ports:
         - { port: 5678, protocol: TCP }
   egress:
     - to:
         - podSelector: {}
+    - to:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: mlops }
+          podSelector:
+            matchLabels: { app.kubernetes.io/name: mlflow }
+      ports:
+        - { port: 5000, protocol: TCP }
+    - to:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: mlops }
+          podSelector:
+            matchLabels: { serving.kserve.io/inferenceservice: demo-anomaly }
+      ports:
+        - { port: 8080, protocol: TCP }
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0
@@ -37,3 +56,13 @@ spec:
       toPorts:
         - ports:
             - { port: "5678", protocol: TCP }
+---
+# WF-04 재학습 버튼 → kube-apiserver 에 Workflow 생성. apiserver 는 Cilium 예약 신원이라 CiliumNetworkPolicy 로 연다.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata: { name: n8n-apiserver, namespace: aiops }
+spec:
+  endpointSelector:
+    matchLabels: { app.kubernetes.io/name: n8n }
+  egress:
+    - toEntities: [kube-apiserver]

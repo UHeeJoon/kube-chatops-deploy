@@ -3,7 +3,9 @@
 #   train   : 정상 구간 앞쪽으로 IsolationForest + z-score 기준선 학습 → MLflow run, 모델 기록
 #   evaluate: 정상 구간 뒤쪽 + 모든 장애 구간으로 precision/recall/F1. 기준선·현재 champion 과 비교해 통과 여부 결정
 #   register: 통과했을 때만 모델 레지스트리 demo-anomaly 에 등록, alias challenger. 출력 storage_uri 를 배포에 쓴다
-# 승격(champion)은 사람이 한다: InferenceService 의 STORAGE_URI 를 바꾸는 커밋 → Argo CD 반영.
+#   notify  : (onExit, 성공·실패 모두) 결과를 n8n WF-04 로 → Slack 에 결과 카드와 승격 버튼
+# 승격(champion)은 사람이 한다: Slack 승격 버튼 → n8n 이 InferenceService 의 STORAGE_URI 를 바꾸는 커밋 → Argo CD 반영.
+# Slack 에서 재학습하면 n8n 이 slack-channel/slack-thread 를 넘겨 결과가 그 스레드에 달린다 (비면 알림 채널).
 apiVersion: argoproj.io/v1alpha1
 kind: WorkflowTemplate
 metadata:
@@ -12,12 +14,18 @@ metadata:
   labels: { app.kubernetes.io/part-of: kube-chatops }
 spec:
   entrypoint: pipeline
+  onExit: notify
   serviceAccountName: argo-workflow
+  # 한 번에 하나만 돈다 (Slack 재학습 버튼을 여러 번 눌러도 차례로)
+  synchronization:
+    mutexes: [{ name: anomaly-train }]
   activeDeadlineSeconds: 1800
   arguments:
     parameters:
       - { name: days, value: "7" } # Prometheus 보존 기간이 7일
       - { name: min-f1, value: "0.6" }
+      - { name: slack-channel, value: "" }
+      - { name: slack-thread, value: "" }
   podMetadata:
     labels: { app.kubernetes.io/name: anomaly-train, app.kubernetes.io/part-of: kube-chatops }
   securityContext:
@@ -120,3 +128,15 @@ spec:
         parameters:
           - { name: version, valueFrom: { path: /tmp/outputs/version } }
           - { name: storage_uri, valueFrom: { path: /tmp/outputs/storage_uri } }
+
+    - name: notify
+      container:
+        args: [notify, --status, "{{workflow.status}}", --failures, "{{workflow.failures}}"]
+        env:
+          - { name: MLFLOW_TRACKING_URI, value: "http://mlflow.mlops.svc:5000" }
+          - { name: ARGO_WORKFLOW_NAME, value: "{{workflow.name}}" }
+          - { name: N8N_WEBHOOK_URL, value: "http://n8n.aiops.svc:5678/webhook/mlops" }
+          - name: N8N_WEBHOOK_TOKEN
+            valueFrom: { secretKeyRef: { name: mlops-n8n-webhook, key: token, optional: true } }
+          - { name: SLACK_CHANNEL, value: "{{workflow.parameters.slack-channel}}" }
+          - { name: SLACK_THREAD, value: "{{workflow.parameters.slack-thread}}" }
