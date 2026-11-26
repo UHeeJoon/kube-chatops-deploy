@@ -24,7 +24,7 @@ spec:
         - { maxSkew: 1, topologyKey: kubernetes.io/hostname, whenUnsatisfiable: ScheduleAnyway, labelSelector: { matchLabels: { app.kubernetes.io/name: waf } } }
       containers:
         - name: waf
-          image: ghcr.io/uheejoon/kube-chatops/waf@sha256:22047d2e54c9cd6d972a26081d4592a6eb4c9310905e7dc593f4b5029926565d
+          image: ghcr.io/uheejoon/kube-chatops/waf@sha256:e02960db010bf515bd150f57cd773264f5756c194d9b37adcbafbeee0d05ae08
           ports:
             - { name: http, containerPort: 8080 }
             - { name: metrics, containerPort: 9180 }
