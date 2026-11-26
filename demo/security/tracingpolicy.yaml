@@ -1,4 +1,7 @@
-# 웹셸 차단 (demo 만): 웹 서버 프로세스(java, php, apache, nginx)가 셸·다운로더를 실행하려는 순간 커널에서 그 프로세스를 죽인다.
+# 웹셸 차단 (demo 만): 웹 서버 프로세스(java, php, apache, nginx)가 프로그램을 실행하려는 순간 커널에서 그 프로세스를 죽인다.
+# 처음에는 셸·다운로더만 막았는데, 셸 없이 시스템 파일을 바로 실행하면(PHP proc_open 배열, Java Runtime.exec) 통과했다
+# (11-27 재현: run.php?b=/usr/bin/id → uid=33). demo 의 웹 서버는 다른 프로그램을 실행할 일이 없으므로 전부 막는다.
+# Java 는 ProcessBuilder 가 jspawnhelper 를 거친다: java → jspawnhelper 는 허용, jspawnhelper → 무엇이든 차단.
 # 죽는 것은 셸을 띄우려고 fork 된 자식 하나뿐이다. 웹 서버 본체는 계속 돈다 (정상 요청은 영향 없음).
 # 같은 규칙을 클러스터 전체에서는 기록만 한다 (homelab components/operators/tetragon-policies/webshell-audit.yaml).
 # 걸리면 tetragon_policy_events_total{policy="webshell-block"} 이 오르고 → prometheusrule.yaml 알림 → n8n → 에이전트 조사 → Slack.
@@ -16,10 +19,15 @@ spec:
       selectors:
         - matchBinaries:
             - operator: Postfix
-              values: [/java, /jspawnhelper, /php, /php-fpm, /php-cgi, /apache2, /httpd, /nginx] # jspawnhelper: Java ProcessBuilder 는 이 도우미가 대신 실행한다
+              values: [/jspawnhelper, /php, /php-fpm, /php-cgi, /apache2, /httpd, /nginx]
+          matchActions:
+            - action: Sigkill
+        - matchBinaries:
+            - operator: Postfix
+              values: [/java]
           matchArgs:
             - index: 0
-              operator: Postfix
-              values: [/sh, /bash, /dash, /ash, /zsh, /ksh, /curl, /wget, /nc, /ncat, /netcat, /socat, /busybox, /perl, /python, /python3]
+              operator: NotPostfix
+              values: [/jspawnhelper]
           matchActions:
             - action: Sigkill

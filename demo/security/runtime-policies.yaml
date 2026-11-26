@@ -77,28 +77,20 @@ spec:
               values: [/su, /sudo, /pkexec, /doas, /nsenter, /unshare, /capsh, /setcap, /chroot]
           matchActions:
             - action: Sigkill
-    - call: sys_fchmodat # chmod u+s / g+s: 나중에 root 로 실행될 문을 만든다
-      syscall: true
+    # chmod u+s / g+s: 나중에 root 로 실행될 문을 만든다. 모든 chmod 계열 시스템 호출이 지나는 보안 훅에서 막는다.
+    # 시스템 호출에 Sigkill 만 걸면 호출은 끝난 뒤 죽어서 비트가 이미 붙는다 (11-27 재현: rc=137 인데 -rwsr-xr-x).
+    # 그래서 Override 로 호출 자체를 실패시키고(EPERM) 그 프로세스도 죽인다.
+    - call: security_path_chmod
+      syscall: false
       args:
-        - { index: 0, type: int }
-        - { index: 1, type: string }
-        - { index: 2, type: int }
-      selectors:
-        - matchArgs:
-            - index: 2
-              operator: Mask
-              values: ["3072"] # S_ISUID(04000) | S_ISGID(02000)
-          matchActions:
-            - action: Sigkill
-    - call: sys_fchmod
-      syscall: true
-      args:
-        - { index: 0, type: int }
+        - { index: 0, type: path }
         - { index: 1, type: int }
       selectors:
         - matchArgs:
             - index: 1
               operator: Mask
-              values: ["3072"]
+              values: ["3072"] # S_ISUID(04000) | S_ISGID(02000)
           matchActions:
+            - action: Override
+              argError: -1
             - action: Sigkill
