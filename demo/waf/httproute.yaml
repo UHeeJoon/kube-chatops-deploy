@@ -1,0 +1,14 @@
+# 공개 주소 demo.ascode.click → WAF → demo-app. Cloudflare 터널에 이 호스트를 추가해야 바깥에서 열린다.
+# /chaos, /metrics, /healthz 는 WAF 가 404 로 막는다.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: demo
+  namespace: demo
+spec:
+  parentRefs:
+    - { name: public-gateway, namespace: ingress }
+  hostnames: [demo.ascode.click]
+  rules:
+    - backendRefs:
+        - { name: waf, port: 8080 }

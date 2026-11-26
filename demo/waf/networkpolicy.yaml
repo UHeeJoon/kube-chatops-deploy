@@ -1,0 +1,21 @@
+# WAF 는 게이트웨이(Cilium 의 reserved:ingress)와 load-gen 에서만 받는다. 그래서 Caddyfile 이 사설 대역에서 온
+# CF-Connecting-IP 를 믿어도 된다 (다른 파드가 이 헤더를 꾸며 넣을 길이 없다). 나가는 곳은 demo-app 뿐.
+# DNS 와 모니터링 수집은 platform-baseline 이 허용한다.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: waf
+  namespace: demo
+spec:
+  endpointSelector:
+    matchLabels: { app.kubernetes.io/name: waf }
+  ingress:
+    - fromEntities: [ingress]
+      toPorts: [{ ports: [{ port: "8080", protocol: TCP }] }]
+    - fromEndpoints:
+        - matchLabels: { app.kubernetes.io/name: load-gen }
+      toPorts: [{ ports: [{ port: "8080", protocol: TCP }] }]
+  egress:
+    - toEndpoints:
+        - matchLabels: { app.kubernetes.io/name: demo-app }
+      toPorts: [{ ports: [{ port: "8080", protocol: TCP }] }]

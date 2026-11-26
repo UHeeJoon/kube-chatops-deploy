@@ -1,0 +1,83 @@
+# demo 앞단 웹 방화벽 (Caddy + Coraza, OWASP CRS 4, 차단 모드). 소스: kube-chatops demo/waf
+# 들어오는 길: 공개 게이트웨이(demo.ascode.click) 와 load-gen. 나가는 길: demo-app 뿐.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: waf
+  namespace: demo
+  labels: { app.kubernetes.io/name: waf, app.kubernetes.io/part-of: kube-chatops }
+spec:
+  replicas: 2
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels: { app.kubernetes.io/name: waf }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: waf, app.kubernetes.io/part-of: kube-chatops }
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile: { type: RuntimeDefault }
+      topologySpreadConstraints:
+        - { maxSkew: 1, topologyKey: kubernetes.io/hostname, whenUnsatisfiable: ScheduleAnyway, labelSelector: { matchLabels: { app.kubernetes.io/name: waf } } }
+      containers:
+        - name: waf
+          image: ghcr.io/uheejoon/kube-chatops/waf@sha256:447c1a4d92afaaae31f5f25f93fd43f11bdac270f8cb1276b0d09c5a1a199659
+          ports:
+            - { name: http, containerPort: 8080 }
+            - { name: metrics, containerPort: 9180 }
+          env:
+            - { name: UPSTREAM, value: "demo-app.demo.svc:8080" }
+            - { name: GOMEMLIMIT, value: "100MiB" }
+          resources:
+            requests: { cpu: 20m, memory: 64Mi }
+            limits: { memory: 128Mi }
+          readinessProbe:
+            tcpSocket: { port: http }
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket: { port: http }
+            periodSeconds: 10
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - { name: tmp, emptyDir: { sizeLimit: 16Mi } }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: waf
+  namespace: demo
+  labels: { app.kubernetes.io/name: waf }
+spec:
+  selector: { app.kubernetes.io/name: waf }
+  ports:
+    - { name: http, port: 8080, targetPort: http }
+    - { name: metrics, port: 9180, targetPort: metrics }
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: waf
+  namespace: demo
+spec:
+  selector:
+    matchLabels: { app.kubernetes.io/name: waf }
+  endpoints:
+    - { port: metrics, interval: 15s }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: waf
+  namespace: demo
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: waf }

@@ -1,0 +1,25 @@
+# WAF 차단 알림. 차단(403)은 이미 끝난 조치라 알림은 보고용이다 (n8n → 에이전트 조사 → Slack).
+# 어떤 IP·규칙인지는 Loki {namespace="demo", container="waf"} 의 "WAF rule violation detected" 줄에 있다.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: waf
+  namespace: demo
+  labels: { release: kube-prometheus, app.kubernetes.io/part-of: kube-chatops }
+spec:
+  groups:
+    - name: demo-waf
+      rules:
+        - alert: DemoWafAttackBlocked
+          # 5분에 5건 넘게 막으면 공격 시도로 본다 (스캐너 한 번 지나가면 수십~수백 건)
+          expr: sum(increase(caddy_http_request_duration_seconds_count{namespace="demo", handler="waf", code="403"}[5m])) > 5
+          labels: { severity: warning, kube_chatops: "true", category: security }
+          annotations:
+            summary: 'demo 웹 방화벽이 5분 동안 {{ $value | printf "%.0f" }}건을 막음'
+            description: 'Coraza(OWASP CRS) 가 SQLi·경로 조작·명령 주입·스캐너 같은 요청을 403 으로 막았다. 출발 IP 와 규칙은 Loki {namespace="demo", container="waf"} |= "WAF rule violation" 에서 본다.'
+        - alert: DemoWafDown
+          expr: sum(up{namespace="demo", job="waf"}) < 1 or absent(up{namespace="demo", job="waf"})
+          for: 3m
+          labels: { severity: critical, kube_chatops: "true" }
+          annotations:
+            summary: 'demo 웹 방화벽 파드가 모두 내려감 (공개 주소와 load-gen 요청이 끊긴다)'
