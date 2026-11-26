@@ -1,0 +1,25 @@
+# 웹셸 차단 (demo 만): 웹 서버 프로세스(java, php, apache, nginx)가 셸·다운로더를 실행하려는 순간 커널에서 그 프로세스를 죽인다.
+# 죽는 것은 셸을 띄우려고 fork 된 자식 하나뿐이다. 웹 서버 본체는 계속 돈다 (정상 요청은 영향 없음).
+# 같은 규칙을 클러스터 전체에서는 기록만 한다 (homelab components/operators/tetragon-policies/webshell-audit.yaml).
+# 걸리면 tetragon_policy_events_total{policy="webshell-block"} 이 오르고 → prometheusrule.yaml 알림 → n8n → 에이전트 조사 → Slack.
+apiVersion: cilium.io/v1alpha1
+kind: TracingPolicyNamespaced
+metadata:
+  name: webshell-block
+  namespace: demo
+spec:
+  kprobes:
+    - call: security_bprm_creds_for_exec # 새 프로그램 실행 직전 (fork 된 자식이 아직 "java" 인 시점)
+      syscall: false
+      args:
+        - { index: 0, type: linux_binprm } # 실행하려는 파일 (심볼릭 링크를 따라간 실제 경로, 예: alpine 의 /bin/sh → /bin/busybox)
+      selectors:
+        - matchBinaries:
+            - operator: Postfix
+              values: [/java, /php, /php-fpm, /php-cgi, /apache2, /httpd, /nginx]
+          matchArgs:
+            - index: 0
+              operator: Postfix
+              values: [/sh, /bash, /dash, /ash, /zsh, /ksh, /curl, /wget, /nc, /ncat, /netcat, /socat, /busybox, /perl, /python, /python3]
+          matchActions:
+            - action: Sigkill

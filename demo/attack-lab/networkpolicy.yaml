@@ -1,0 +1,10 @@
+# 취약 앱은 들고 나는 통신을 모두 막는다 (규칙 없음 = 전부 거부). kubectl exec 로 파드 안 localhost 에서만 부른다.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: attack-lab-isolate
+  namespace: demo
+spec:
+  podSelector:
+    matchLabels: { kube-chatops/purpose: security-test }
+  policyTypes: [Ingress, Egress]

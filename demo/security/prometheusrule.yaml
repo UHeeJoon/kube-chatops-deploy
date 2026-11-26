@@ -1,0 +1,19 @@
+# 보안 이벤트 알림. 기존 demo 알림과 같은 경로: AlertmanagerConfig(demo/alerts) → n8n WF-02 → 에이전트 조사 → Slack.
+# Tetragon ServiceMonitor 가 honorLabels 라서 namespace 는 공격받은 파드의 ns 다 (Tetragon 파드의 kube-system 이 아님).
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: security
+  namespace: demo
+  labels: { release: kube-prometheus, app.kubernetes.io/part-of: kube-chatops }
+spec:
+  groups:
+    - name: security
+      rules:
+        - alert: DemoWebshellBlocked
+          # 이미 차단(Sigkill)한 뒤의 보고다. for 없이 바로 보낸다
+          expr: sum by (namespace, pod, binary) (increase(tetragon_policy_events_total{namespace="demo", policy="webshell-block"}[5m])) > 0
+          labels: { severity: critical, kube_chatops: "true", category: security }
+          annotations:
+            summary: "{{ $labels.pod }} 에서 웹 서버({{ $labels.binary }})가 셸 실행을 시도해 차단했습니다 (5분간 {{ $value | humanize }}회)"
+            action_taken: "Tetragon Sigkill: 셸을 띄우려던 자식 프로세스만 종료, 웹 서버는 유지"
