@@ -23,6 +23,7 @@ spec:
           image: ghcr.io/uheejoon/kube-chatops/load-gen@sha256:e477f7b4683622d66026de9c6df8ae025bc310912add9560d9593e0d61baa59c
           ports:
             - { name: metrics, containerPort: 9100 }
+            - { name: control, containerPort: 9101 } # 요청 급감 장애 주입 (kubectl exec 로 localhost 에서만 부른다)
           env:
             - { name: TARGET_URL, value: "http://demo-app.demo.svc:8080" }
             - { name: BASE_RPS, value: "5" }

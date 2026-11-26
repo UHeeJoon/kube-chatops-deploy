@@ -15,8 +15,9 @@ FEATURES = {
     "error_ratio": f'sum(rate(http_requests_total{{namespace="demo", {PATH}, status=~"5.."}}[2m])) / sum(rate(http_requests_total{{namespace="demo", {PATH}}}[2m]))',
     "p95_seconds": f'histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{{namespace="demo", {PATH}}}[2m])))',
     "mem_ratio": 'max(max by (pod) (container_memory_working_set_bytes{namespace="demo", container="app"}) / max by (pod) (kube_pod_container_resource_limits{namespace="demo", container="app", resource="memory"}))',
+    "mem_growth": 'max(max by (pod) (deriv(container_memory_working_set_bytes{namespace="demo", container="app"}[5m])) * 60 / max by (pod) (kube_pod_container_resource_limits{namespace="demo", container="app", resource="memory"}) and on (pod) (time() - max by (pod) (kube_pod_container_state_started{namespace="demo", container="app"}) > 300))',
 }
-TRUTH = 'max by (kind) (demo_chaos_active{namespace="demo"})'
+TRUTH = 'max by (kind) (demo_chaos_active{namespace="demo"})'  # demo-app: latency|error|leak, load-gen: traffic_drop
 
 
 def panel(kind, title, exprs, x, w, h, unit=None, desc=None, **extra):
@@ -57,7 +58,7 @@ color_re = lambda rx, c: {"matcher": {"id": "byRegexp", "options": rx}, "propert
 
 row("지금")
 panel("stat", "지금 판정 (마지막 1분)", [('max(anomaly_model_is_anomaly{rule="hybrid"})', "")], 0, 4, 5, None,
-      "혼합 규칙: IsolationForest 점수가 경계를 넘거나, 한 특성이라도 |z| ≥ 4 이면 이상",
+      "혼합 규칙: IsolationForest 점수가 경계를 넘거나, 한 특성이라도 |z| ≥ 4 이거나, 요청 수가 급감 경계(rps_low) 아래면 이상",
       defaults={"mappings": [{"type": "value", "options": {"0": {"text": "정상", "color": "green"}, "1": {"text": "이상", "color": "red"}}}],
                 **thr((None, "green"), (1, "red"))}, options={"colorMode": "background"})
 panel("stat", "가장 크게 벗어난 특성", [("topk(1, abs(max by (feature) (anomaly_model_feature_z)))", "{{feature}}")], 4, 5, 5, None,
@@ -84,17 +85,19 @@ panel("timeseries", "특성별 z-score (왜 이상인가)", [("max by (feature) 
       "+ 는 평소보다 큼, - 는 작음. 점선 ±4 를 넘으면 그 특성만으로 이상 판정. 모델 v2 부터 나온다",
       defaults={"custom": {"thresholdsStyle": {"mode": "line+area"}, "fillOpacity": 0},
                 "thresholds": {"mode": "absolute", "steps": [{"color": "transparent", "value": None}, {"color": "red", "value": 4}]}})
-panel("timeseries", "규칙별 판정", [('max by (rule) (anomaly_model_is_anomaly{rule=~"iforest|zscore"})', "{{rule}}")], 14, 10, 4, None,
-      "iforest: 여러 지표의 조합이 평소와 다름. zscore: 한 지표가 크게 벗어남", defaults={**step_line, "min": 0, "max": 1.05})
+panel("timeseries", "규칙별 판정", [('max by (rule) (anomaly_model_is_anomaly{rule=~"iforest|zscore|traffic_drop"})', "{{rule}}")], 14, 10, 4, None,
+      "iforest: 여러 지표의 조합이 평소와 다름. zscore: 한 지표가 크게 벗어남. traffic_drop: 요청 수가 학습 기간 하위 1% 의 절반 아래 (모델 v6 부터)", defaults={**step_line, "min": 0, "max": 1.05})
 panel("timeseries", "IsolationForest 이상 점수", [("max(anomaly_model_score)", "점수")], 14, 10, 4, None,
       "클수록 이상. 경계는 학습 정상 구간 점수의 상위 0.1% (MLflow run 의 threshold 지표)", gridPos={"x": 14, "y": y + 4, "w": 10, "h": 4})
 y += 8
 
 row("모델에 들어가는 값 (1분 단위)")
-panel("timeseries", "요청 수", [(FEATURES["rps"], "rps")], 0, 6, 6, "reqps")
-panel("timeseries", "5xx 비율", [(FEATURES["error_ratio"], "error_ratio")], 6, 6, 6, "percentunit")
-panel("timeseries", "p95 지연", [(FEATURES["p95_seconds"], "p95")], 12, 6, 6, "s")
-panel("timeseries", "메모리 사용률 (한도 대비, 최대 파드)", [(FEATURES["mem_ratio"], "mem_ratio")], 18, 6, 6, "percentunit", defaults={"max": 1})
+panel("timeseries", "요청 수", [(FEATURES["rps"], "rps")], 0, 5, 6, "reqps")
+panel("timeseries", "5xx 비율", [(FEATURES["error_ratio"], "error_ratio")], 5, 5, 6, "percentunit")
+panel("timeseries", "p95 지연", [(FEATURES["p95_seconds"], "p95")], 10, 4, 6, "s")
+panel("timeseries", "메모리 사용률 (한도 대비, 최대 파드)", [(FEATURES["mem_ratio"], "mem_ratio")], 14, 5, 6, "percentunit", defaults={"max": 1})
+panel("timeseries", "메모리 증가 속도 (분당, 한도 대비)", [(FEATURES["mem_growth"], "mem_growth")], 19, 5, 6, "percentunit",
+      "누수를 메모리가 아직 낮을 때 잡는 특성 (모델 v6 부터). 재시작 직후 5분은 비어 있다")
 y += 6
 
 row("서빙과 도구")
