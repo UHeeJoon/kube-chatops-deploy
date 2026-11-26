@@ -23,3 +23,11 @@ spec:
   owner: rag
   extensions:
     - { name: vector, ensure: present }
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata: { name: mlflow, namespace: aiops }
+spec:
+  cluster: { name: aiops-pg }
+  name: mlflow
+  owner: mlflow

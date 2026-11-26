@@ -1,0 +1,24 @@
+# demo-anomaly 예측 서버 (KServe Standard 모드 → Deployment + Service demo-anomaly-predictor:80 → 8080)
+# 들어옴: mcp ns(mcp-anomaly) 의 8080. 메트릭 스크레이프는 기준선이 허용.
+# 나감: MinIO(storage:9000) — 파드 시작 때 storage-initializer 가 모델을 내려받는다. DNS 는 기준선이 허용.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: demo-anomaly, namespace: mlops }
+spec:
+  podSelector:
+    matchLabels: { serving.kserve.io/inferenceservice: demo-anomaly }
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: mcp }
+      ports:
+        - { port: 8080, protocol: TCP }
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: storage }
+          podSelector:
+            matchLabels: { v1.min.io/tenant: myminio }
+      ports:
+        - { port: 9000, protocol: TCP }

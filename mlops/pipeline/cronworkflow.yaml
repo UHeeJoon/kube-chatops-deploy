@@ -1,0 +1,16 @@
+# 매주 월요일 03:00 KST 에 재학습. 결과는 challenger 로만 등록되고, 서빙(champion) 교체는 사람이 승인한다.
+apiVersion: argoproj.io/v1alpha1
+kind: CronWorkflow
+metadata:
+  name: anomaly-train-weekly
+  namespace: mlops
+  labels: { app.kubernetes.io/part-of: kube-chatops }
+spec:
+  schedules: ["0 3 * * 1"]
+  timezone: Asia/Seoul
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 4
+  failedJobsHistoryLimit: 4
+  workflowSpec:
+    workflowTemplateRef: { name: anomaly-train }

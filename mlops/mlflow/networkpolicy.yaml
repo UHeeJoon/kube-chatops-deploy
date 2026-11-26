@@ -1,0 +1,30 @@
+# mlflow
+# 들어옴: mlops ns 안(학습 파이프라인 스텝)의 5000.
+# 나감: aiops-pg(5432), MinIO(storage:9000). DNS 는 기준선이 허용.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: mlflow, namespace: mlops }
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/name: mlflow }
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector: {}
+      ports:
+        - { port: 5000, protocol: TCP }
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: aiops }
+          podSelector:
+            matchLabels: { cnpg.io/cluster: aiops-pg }
+      ports:
+        - { port: 5432, protocol: TCP }
+    - to:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: storage }
+          podSelector:
+            matchLabels: { v1.min.io/tenant: myminio }
+      ports:
+        - { port: 9000, protocol: TCP }

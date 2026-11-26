@@ -1,0 +1,79 @@
+# mcp-anomaly: 이상 탐지 모델(KServe) 호출 MCP 서버 (Streamable HTTP :8080/mcp, 메트릭 :9090).
+# 호출자는 aiops 의 agent 뿐이다 (Bearer 토큰 + networkpolicy).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mcp-anomaly
+  namespace: mcp
+  labels: { app.kubernetes.io/name: mcp-anomaly, app.kubernetes.io/part-of: kube-chatops }
+  annotations:
+    reloader.stakater.com/auto: "true" # Reloader 설치 후 토큰이 바뀌면 자동 재시작
+spec:
+  replicas: 1
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels: { app.kubernetes.io/name: mcp-anomaly }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: mcp-anomaly, app.kubernetes.io/part-of: kube-chatops }
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: app
+          image: ghcr.io/uheejoon/kube-chatops/mcp-anomaly@sha256:b2a04159a38f98b1a63c735b3bd57cf731e988ea6e6f0946512d43644194f8f2
+          ports:
+            - { name: http, containerPort: 8080 }
+            - { name: metrics, containerPort: 9090 }
+          env:
+            - name: MCP_TOKEN
+              valueFrom: { secretKeyRef: { name: mcp-anomaly, key: token } }
+            - { name: ALLOWED_NAMESPACES, value: demo }
+            - name: POD_NAMESPACE
+              valueFrom: { fieldRef: { fieldPath: metadata.namespace } }
+            - { name: PROMETHEUS_URL, value: "http://kube-prometheus-kube-prome-prometheus.monitoring.svc:9090" }
+            - { name: MODEL_URL, value: "http://demo-anomaly-predictor.mlops.svc.cluster.local/v1/models/demo-anomaly:predict" }
+          resources:
+            requests: { cpu: 20m, memory: 96Mi }
+            limits: { memory: 256Mi }
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 20
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - { name: tmp, emptyDir: { sizeLimit: 64Mi } }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mcp-anomaly
+  namespace: mcp
+  labels: { app.kubernetes.io/name: mcp-anomaly }
+spec:
+  selector: { app.kubernetes.io/name: mcp-anomaly }
+  ports:
+    - { name: http, port: 8080, targetPort: http }
+    - { name: metrics, port: 9090, targetPort: metrics }
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: mcp-anomaly
+  namespace: mcp
+spec:
+  selector:
+    matchLabels: { app.kubernetes.io/name: mcp-anomaly }
+  endpoints:
+    - { port: metrics, path: /metrics, interval: 30s }

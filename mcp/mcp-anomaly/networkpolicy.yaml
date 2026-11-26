@@ -1,0 +1,31 @@
+# mcp-anomaly
+# 들어옴: aiops ns(agent) 의 8080 만. 메트릭 스크레이프(monitoring) 는 테넌트 기준선 platform-baseline 이 허용.
+# 나감: Prometheus(monitoring:9090), 예측 서버(mlops demo-anomaly:8080). DNS 는 기준선이 허용.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: mcp-anomaly, namespace: mcp }
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/name: mcp-anomaly }
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: aiops }
+      ports:
+        - { port: 8080, protocol: TCP }
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: monitoring }
+          podSelector:
+            matchLabels: { app.kubernetes.io/name: prometheus }
+      ports:
+        - { port: 9090, protocol: TCP }
+    - to:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: mlops }
+          podSelector:
+            matchLabels: { serving.kserve.io/inferenceservice: demo-anomaly }
+      ports:
+        - { port: 8080, protocol: TCP }

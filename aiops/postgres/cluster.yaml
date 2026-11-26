@@ -1,6 +1,6 @@
-# aiops 전용 PostgreSQL (CNPG). n8n, 에이전트 체크포인트, RAG(pgvector) 가 같이 쓴다.
+# aiops 전용 PostgreSQL (CNPG). n8n, 에이전트 체크포인트, RAG(pgvector), MLflow(mlops ns) 가 같이 쓴다.
 # 이미지 18.3-system-trixie 에 pgvector 가 들어 있다.
-# 인스턴스 1개 + longhorn-single: 노드 간 네트워크가 WiFi 라 복제를 줄인다. 백업은 MinIO 연동 후 추가.
+# 인스턴스 1개 + longhorn-single. 백업은 MinIO 연동 후 추가.
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:
@@ -28,3 +28,4 @@ spec:
       - { name: n8n, ensure: present, login: true, passwordSecret: { name: aiops-pg-n8n } }
       - { name: agent, ensure: present, login: true, passwordSecret: { name: aiops-pg-agent } }
       - { name: rag, ensure: present, login: true, passwordSecret: { name: aiops-pg-rag } }
+      - { name: mlflow, ensure: present, login: true, passwordSecret: { name: aiops-pg-mlflow } } # mlops ns 의 MLflow 서버

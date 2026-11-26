@@ -46,6 +46,9 @@ spec:
             - { name: MAX_TOOL_CALLS, value: "15" }
             - { name: MAX_SECONDS, value: "180" }
             - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://tempo.monitoring.svc:4317" }
+            # MCP 서버 목록 (이름=URL). 토큰은 Secret agent 의 MCP_TOKEN_<이름>
+            - name: MCP_SERVERS
+              value: "prometheus=http://mcp-prometheus.mcp.svc:8080/mcp,loki=http://mcp-loki.mcp.svc:8080/mcp,k8s=http://mcp-k8s.mcp.svc:8080/mcp,anomaly=http://mcp-anomaly.mcp.svc:8080/mcp"
           resources:
             requests: { cpu: 100m, memory: 256Mi }
             limits: { memory: 768Mi }

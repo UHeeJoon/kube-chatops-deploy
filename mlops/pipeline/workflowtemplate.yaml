@@ -1,0 +1,122 @@
+# 이상 탐지 모델 학습 파이프라인 (Argo Workflows): extract → train → evaluate → register
+#   extract : Prometheus 에서 1분 단위 특성 4개 + 정답(demo_chaos_active) → MinIO s3://mlops/data/<워크플로>/dataset.parquet
+#   train   : 정상 구간 앞쪽으로 IsolationForest + z-score 기준선 학습 → MLflow run, 모델 기록
+#   evaluate: 정상 구간 뒤쪽 + 모든 장애 구간으로 precision/recall/F1. 기준선·현재 champion 과 비교해 통과 여부 결정
+#   register: 통과했을 때만 모델 레지스트리 demo-anomaly 에 등록, alias challenger. 출력 storage_uri 를 배포에 쓴다
+# 승격(champion)은 사람이 한다: InferenceService 의 STORAGE_URI 를 바꾸는 커밋 → Argo CD 반영.
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: anomaly-train
+  namespace: mlops
+  labels: { app.kubernetes.io/part-of: kube-chatops }
+spec:
+  entrypoint: pipeline
+  serviceAccountName: argo-workflow
+  activeDeadlineSeconds: 1800
+  arguments:
+    parameters:
+      - { name: days, value: "7" } # Prometheus 보존 기간이 7일
+      - { name: min-f1, value: "0.6" }
+  podMetadata:
+    labels: { app.kubernetes.io/name: anomaly-train, app.kubernetes.io/part-of: kube-chatops }
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 10001
+    runAsGroup: 10001
+    seccompProfile: { type: RuntimeDefault }
+  volumes:
+    - { name: tmp, emptyDir: { sizeLimit: 1Gi } }
+  templateDefaults:
+    retryStrategy: { limit: "2", retryPolicy: OnError } # 노드·네트워크 오류만 재시도 (평가 실패는 재시도하지 않음)
+    container:
+      image: ghcr.io/uheejoon/kube-chatops/anomaly-train@sha256:ef0ce04b1cf6c53cf3f1d2511788df485d4ee8c4ffcb997c882f6a534268843a
+      envFrom:
+        - secretRef: { name: mlops-s3 } # 단계 사이 데이터(MinIO)
+      env:
+        - { name: MLFLOW_TRACKING_URI, value: "http://mlflow.mlops.svc:5000" }
+        - { name: MLFLOW_ARTIFACTS_DESTINATION, value: s3://mlops/mlflow }
+        - { name: PROM_URL, value: "http://kube-prometheus-kube-prome-prometheus.monitoring.svc:9090" }
+        - { name: S3_ENDPOINT, value: "http://minio.storage.svc.cluster.local" }
+        - { name: S3_BUCKET, value: mlops }
+        - { name: ARGO_WORKFLOW_NAME, value: "{{workflow.name}}" }
+      resources:
+        requests: { cpu: 100m, memory: 384Mi }
+        limits: { memory: 1Gi }
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities: { drop: [ALL] }
+      volumeMounts:
+        - { name: tmp, mountPath: /tmp }
+  templates:
+    - name: pipeline
+      dag:
+        tasks:
+          - name: extract
+            template: extract
+          - name: train
+            template: train
+            depends: extract
+            arguments:
+              parameters:
+                - { name: dataset, value: "{{tasks.extract.outputs.parameters.dataset}}" }
+          - name: evaluate
+            template: evaluate
+            depends: train
+            arguments:
+              parameters:
+                - { name: run-id, value: "{{tasks.train.outputs.parameters.run_id}}" }
+                - { name: test-set, value: "{{tasks.train.outputs.parameters.test_set}}" }
+          - name: register
+            template: register
+            depends: evaluate
+            when: "{{tasks.evaluate.outputs.parameters.passed}} == true"
+            arguments:
+              parameters:
+                - { name: run-id, value: "{{tasks.train.outputs.parameters.run_id}}" }
+      outputs:
+        parameters:
+          - name: run_id
+            valueFrom: { parameter: "{{tasks.train.outputs.parameters.run_id}}" }
+          - name: metrics
+            valueFrom: { parameter: "{{tasks.evaluate.outputs.parameters.metrics}}" }
+          - name: passed
+            valueFrom: { parameter: "{{tasks.evaluate.outputs.parameters.passed}}" }
+
+    - name: extract
+      container:
+        args: [extract, --days, "{{workflow.parameters.days}}"]
+      outputs:
+        parameters:
+          - { name: dataset, valueFrom: { path: /tmp/outputs/dataset } }
+
+    - name: train
+      inputs:
+        parameters: [{ name: dataset }]
+      container:
+        args: [train, --dataset, "{{inputs.parameters.dataset}}"]
+      outputs:
+        parameters:
+          - { name: run_id, valueFrom: { path: /tmp/outputs/run_id } }
+          - { name: test_set, valueFrom: { path: /tmp/outputs/test_set } }
+
+    - name: evaluate
+      inputs:
+        parameters: [{ name: run-id }, { name: test-set }]
+      container:
+        args: [evaluate, --run-id, "{{inputs.parameters.run-id}}", --test-set, "{{inputs.parameters.test-set}}", --min-f1, "{{workflow.parameters.min-f1}}"]
+      outputs:
+        parameters:
+          - { name: passed, valueFrom: { path: /tmp/outputs/passed } }
+          - { name: metrics, valueFrom: { path: /tmp/outputs/metrics } }
+
+    - name: register
+      inputs:
+        parameters: [{ name: run-id }]
+      container:
+        args: [register, --run-id, "{{inputs.parameters.run-id}}"]
+      outputs:
+        parameters:
+          - { name: version, valueFrom: { path: /tmp/outputs/version } }
+          - { name: storage_uri, valueFrom: { path: /tmp/outputs/storage_uri } }
