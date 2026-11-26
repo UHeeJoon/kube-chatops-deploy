@@ -14,6 +14,9 @@ PATH = 'path!~"/chaos/.*|/metrics|/healthz.*"'
 ALERTS = 'ALERTS{alertstate="firing", kube_chatops="true"}'
 WAF = 'caddy_http_request_duration_seconds_count{namespace="demo", handler="waf", code="403"}'
 TETRA = 'tetragon_policy_events_total{namespace="demo", policy="webshell-block"}'
+RL = 'caddy_http_request_duration_seconds_count{namespace="demo", handler="rate_limit", code="429"}'
+KC_FAIL = 'keycloak_user_events_total{event="login", error!=""}'
+BLOCKS = 'tetragon_policy_events_total{namespace="demo", policy=~".*-block"}'
 
 
 def since(metric, rng):
@@ -62,8 +65,8 @@ panel("stat", "이상 탐지 모델", [('max(anomaly_model_is_anomaly{rule="hybr
 panel("stat", "격리된 파드", [('count(kube_pod_owner{namespace="demo", owner_kind="<none>"}) or vector(0)', "")], 8, 4, 5, None,
       "선 조치로 격리된 파드 (라벨을 떼어 ReplicaSet 에서 분리됨, 모든 통신 차단). 조사 끝나면 Slack 의 [격리 파드 삭제]",
       defaults=thr((None, "green"), (1, "orange")), options=bg)
-panel("stat", "웹셸 차단 (24시간)", [(since(TETRA, "24h"), "")], 12, 4, 5, None,
-      "Tetragon 이 커널에서 죽인 실행 시도 (웹 서버가 셸·다운로더를 실행하려 함)",
+panel("stat", "커널 차단 (24시간)", [(since(BLOCKS, "24h"), "")], 12, 4, 5, None,
+      "Tetragon 이 커널에서 막은 시도 (웹셸 실행, 웹 루트 쓰기, 투하 실행, 권한 상승)",
       defaults={"decimals": 0, **thr((None, "green"), (1, "red"))}, options=bg)
 panel("stat", "WAF 차단 (24시간)", [(since(WAF, "24h"), "")], 16, 4, 5, None,
       "웹 방화벽(Coraza, OWASP CRS)이 403 으로 막은 요청 (SQLi, 경로 조작, 명령 주입, 스캐너 등)",
@@ -108,12 +111,17 @@ panel("timeseries", "재시작 (구간별)", [('sum by (pod) (increase(kube_pod_
 y += 7
 
 row("보안 (공격과 조치)")
-panel("timeseries", "WAF 차단 (구간별)", [(f"sum(increase({WAF}[$__interval]))", "차단")], 0, 8, 7, "short",
-      "5분에 5건을 넘으면 DemoWafAttackBlocked 알림", interval="5m",
-      defaults={"custom": {"drawStyle": "bars", "fillOpacity": 80}, "color": {"mode": "fixed", "fixedColor": "orange"}})
-panel("timeseries", "웹셸 차단 (파드별, 구간별)", [(f"sum by (pod) (increase({TETRA}[$__interval]))", "{{pod}}")], 8, 8, 7, "short",
-      "한 번이면 DemoWebshellBlocked(차단 보고), 5분 안에 3번이면 DemoWebshellRepeated(격리 후 보고)", interval="5m",
-      defaults={"custom": {"drawStyle": "bars", "fillOpacity": 80}})
+panel("timeseries", "요청 차단 (구간별)", [
+    (f"sum(increase({WAF}[$__interval]))", "WAF 규칙 (403)"),
+    (f"sum(increase({RL}[$__interval]))", "요청 수 제한 (429)"),
+    (f"sum by (realm) (increase({KC_FAIL}[$__interval]))", "keycloak 로그인 실패 ({{realm}})")], 0, 8, 7, "short",
+      "403: 5분 5건 초과 DemoWafAttackBlocked. 429: IP 당 10초 100건 초과, 5분 50건 초과 DemoRateLimited. "
+      "로그인 실패: 5분 20건 초과 KeycloakLoginFailuresHigh (플랫폼 알림이라 Slack 보고 없음)", interval="5m",
+      defaults={"custom": {"drawStyle": "bars", "fillOpacity": 80, "stacking": {"mode": "normal"}}})
+panel("timeseries", "커널 차단 (정책별, 구간별)", [(f"sum by (policy) (increase({BLOCKS}[$__interval]))", "{{policy}}")], 8, 8, 7, "short",
+      "webshell-block: 프로그램 실행, webroot-tamper-block: 웹 루트·시스템 경로 쓰기(쓰기만 거부), "
+      "dropper-block·privesc-block: 투하 실행·권한 상승 (한 번이면 격리)", interval="5m",
+      defaults={"custom": {"drawStyle": "bars", "fillOpacity": 80, "stacking": {"mode": "normal"}}})
 panel("table", "많이 막힌 출발 IP", [
     ('topk(10, sum by (client_ip) (count_over_time({namespace="demo", container="waf"} |= "\\"transaction\\"" | json client_ip="transaction.client_ip" [$__range])))', "", {"queryType": "instant"})],
       16, 8, 7, None, "WAF 감사 로그 기준, 보는 기간 전체. 실제 IP 는 Cloudflare 의 CF-Connecting-IP (클러스터 안 요청은 사설 IP)", ds=LOKI,

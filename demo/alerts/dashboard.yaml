@@ -231,7 +231,7 @@ data:
       },
       {
        "type": "stat",
-       "title": "웹셸 차단 (24시간)",
+       "title": "커널 차단 (24시간)",
        "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -244,7 +244,7 @@ data:
        },
        "targets": [
         {
-         "expr": "sum((increase(tetragon_policy_events_total{namespace=\"demo\", policy=\"webshell-block\"}[24h]) unless (tetragon_policy_events_total{namespace=\"demo\", policy=\"webshell-block\"} unless tetragon_policy_events_total{namespace=\"demo\", policy=\"webshell-block\"} offset 24h)) or (tetragon_policy_events_total{namespace=\"demo\", policy=\"webshell-block\"} unless tetragon_policy_events_total{namespace=\"demo\", policy=\"webshell-block\"} offset 24h)) or vector(0)",
+         "expr": "sum((increase(tetragon_policy_events_total{namespace=\"demo\", policy=~\".*-block\"}[24h]) unless (tetragon_policy_events_total{namespace=\"demo\", policy=~\".*-block\"} unless tetragon_policy_events_total{namespace=\"demo\", policy=~\".*-block\"} offset 24h)) or (tetragon_policy_events_total{namespace=\"demo\", policy=~\".*-block\"} unless tetragon_policy_events_total{namespace=\"demo\", policy=~\".*-block\"} offset 24h)) or vector(0)",
          "legendFormat": "",
          "refId": "A",
          "datasource": {
@@ -277,7 +277,7 @@ data:
         "graphMode": "none",
         "textMode": "value"
        },
-       "description": "Tetragon 이 커널에서 죽인 실행 시도 (웹 서버가 셸·다운로더를 실행하려 함)"
+       "description": "Tetragon 이 커널에서 막은 시도 (웹셸 실행, 웹 루트 쓰기, 투하 실행, 권한 상승)"
       },
       {
        "type": "stat",
@@ -798,7 +798,7 @@ data:
       },
       {
        "type": "timeseries",
-       "title": "WAF 차단 (구간별)",
+       "title": "요청 차단 (구간별)",
        "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -812,8 +812,26 @@ data:
        "targets": [
         {
          "expr": "sum(increase(caddy_http_request_duration_seconds_count{namespace=\"demo\", handler=\"waf\", code=\"403\"}[$__interval]))",
-         "legendFormat": "차단",
+         "legendFormat": "WAF 규칙 (403)",
          "refId": "A",
+         "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+         }
+        },
+        {
+         "expr": "sum(increase(caddy_http_request_duration_seconds_count{namespace=\"demo\", handler=\"rate_limit\", code=\"429\"}[$__interval]))",
+         "legendFormat": "요청 수 제한 (429)",
+         "refId": "B",
+         "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+         }
+        },
+        {
+         "expr": "sum by (realm) (increase(keycloak_user_events_total{event=\"login\", error!=\"\"}[$__interval]))",
+         "legendFormat": "keycloak 로그인 실패 ({{realm}})",
+         "refId": "C",
          "datasource": {
           "type": "prometheus",
           "uid": "${datasource}"
@@ -825,22 +843,21 @@ data:
          "unit": "short",
          "custom": {
           "drawStyle": "bars",
-          "fillOpacity": 80
-         },
-         "color": {
-          "mode": "fixed",
-          "fixedColor": "orange"
+          "fillOpacity": 80,
+          "stacking": {
+           "mode": "normal"
+          }
          }
         },
         "overrides": []
        },
        "options": {},
-       "description": "5분에 5건을 넘으면 DemoWafAttackBlocked 알림",
+       "description": "403: 5분 5건 초과 DemoWafAttackBlocked. 429: IP 당 10초 100건 초과, 5분 50건 초과 DemoRateLimited. 로그인 실패: 5분 20건 초과 KeycloakLoginFailuresHigh (플랫폼 알림이라 Slack 보고 없음)",
        "interval": "5m"
       },
       {
        "type": "timeseries",
-       "title": "웹셸 차단 (파드별, 구간별)",
+       "title": "커널 차단 (정책별, 구간별)",
        "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -853,8 +870,8 @@ data:
        },
        "targets": [
         {
-         "expr": "sum by (pod) (increase(tetragon_policy_events_total{namespace=\"demo\", policy=\"webshell-block\"}[$__interval]))",
-         "legendFormat": "{{pod}}",
+         "expr": "sum by (policy) (increase(tetragon_policy_events_total{namespace=\"demo\", policy=~\".*-block\"}[$__interval]))",
+         "legendFormat": "{{policy}}",
          "refId": "A",
          "datasource": {
           "type": "prometheus",
@@ -867,13 +884,16 @@ data:
          "unit": "short",
          "custom": {
           "drawStyle": "bars",
-          "fillOpacity": 80
+          "fillOpacity": 80,
+          "stacking": {
+           "mode": "normal"
+          }
          }
         },
         "overrides": []
        },
        "options": {},
-       "description": "한 번이면 DemoWebshellBlocked(차단 보고), 5분 안에 3번이면 DemoWebshellRepeated(격리 후 보고)",
+       "description": "webshell-block: 프로그램 실행, webroot-tamper-block: 웹 루트·시스템 경로 쓰기(쓰기만 거부), dropper-block·privesc-block: 투하 실행·권한 상승 (한 번이면 격리)",
        "interval": "5m"
       },
       {
