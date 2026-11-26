@@ -1,0 +1,83 @@
+# mcp-runbook: 런북과 과거 사건을 찾아 주는 MCP 서버 (Rust, RAG).
+# 임베딩 모델과 런북이 이미지에 들어 있어 실행 중 외부로 나가지 않는다. 저장소는 aiops-pg 의 rag DB (pgvector).
+# aiops 에 두는 이유: DB 계정 Secret(aiops-pg-rag)이 이 네임스페이스에 있고, 클러스터 데이터를 읽는 다른 MCP 서버(mcp ns)와 달리 DB 만 쓴다.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mcp-runbook
+  namespace: aiops
+  labels: { app.kubernetes.io/name: mcp-runbook, app.kubernetes.io/part-of: kube-chatops }
+  annotations:
+    reloader.stakater.com/auto: "true"
+spec:
+  replicas: 1
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels: { app.kubernetes.io/name: mcp-runbook }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: mcp-runbook, app.kubernetes.io/part-of: kube-chatops }
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: app
+          image: ghcr.io/uheejoon/kube-chatops/mcp-runbook@sha256:6b72266f121d58dd92334e75e4a4049ae54be661b4b1f366fdfaac3958d8aae3
+          ports:
+            - { name: http, containerPort: 8080 }
+            - { name: metrics, containerPort: 9090 }
+          env:
+            - name: API_TOKEN
+              valueFrom: { secretKeyRef: { name: mcp-runbook, key: token } }
+            - { name: PGHOST, value: aiops-pg-rw.aiops.svc }
+            - { name: PGDATABASE, value: rag }
+            - name: PGUSER
+              valueFrom: { secretKeyRef: { name: aiops-pg-rag, key: username } }
+            - name: PGPASSWORD
+              valueFrom: { secretKeyRef: { name: aiops-pg-rag, key: password } }
+            - { name: EMBED_THREADS, value: "2" }
+          resources:
+            # 모델(multilingual-e5-small, 449MB)을 메모리에 올려 평소 약 1GiB 를 쓴다 (로컬 측정 RSS 1.0GiB)
+            requests: { cpu: 50m, memory: 1Gi }
+            limits: { memory: 1536Mi }
+          startupProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 3
+            failureThreshold: 40
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 20
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mcp-runbook
+  namespace: aiops
+  labels: { app.kubernetes.io/name: mcp-runbook }
+spec:
+  selector: { app.kubernetes.io/name: mcp-runbook }
+  ports:
+    - { name: http, port: 8080, targetPort: http }
+    - { name: metrics, port: 9090, targetPort: metrics }
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: mcp-runbook
+  namespace: aiops
+spec:
+  selector:
+    matchLabels: { app.kubernetes.io/name: mcp-runbook }
+  endpoints:
+    - { port: metrics, path: /metrics, interval: 30s }

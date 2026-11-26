@@ -1,0 +1,22 @@
+# mcp-runbook
+# 들어옴: agent 의 8080 만. 스크레이프는 기준선이 허용.
+# 나감: aiops-pg(5432) 만. 모델과 런북이 이미지에 있어 외부로 나갈 일이 없다.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: mcp-runbook, namespace: aiops }
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/name: mcp-runbook }
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: { app.kubernetes.io/name: agent }
+      ports:
+        - { port: 8080, protocol: TCP }
+  egress:
+    - to:
+        - podSelector:
+            matchLabels: { cnpg.io/cluster: aiops-pg }
+      ports:
+        - { port: 5432, protocol: TCP }
