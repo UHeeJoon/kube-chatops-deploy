@@ -1,0 +1,58 @@
+# 네트워크 흐름 이상 (보안 S-9): Hubble 흐름 지표로 횡이동·외부 연결(C2)·포트 스캔을 잡는다.
+# 지표는 cilium-agent 가 내고(homelab bootstrap/cilium-values.yaml hubble.metrics) 대상 라벨 namespace 는 kube-system 이다.
+# 그래서 source_namespace 로 고른 뒤 namespace=demo 를 붙인다 (AlertmanagerConfig 가 namespace=demo 알림만 n8n 으로 보냄).
+# 차단은 이미 네트워크 정책이 한다. 여기서는 "막힌 시도가 있었다" 를 알려 사람·에이전트가 침해를 조사하게 한다.
+# 평소 demo 흐름: demo 안 8080, coredns 53 뿐이고 정책 차단 0 (11-27 확인).
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: flow
+  namespace: demo
+  labels:
+    release: kube-prometheus
+spec:
+  groups:
+    - name: demo-flow
+      rules:
+        - alert: DemoFlowPolicyDenied
+          # demo 워크로드가 정책에 없는 곳으로 나가려다 막힘 (다른 ns 서비스 = 횡이동, 외부 = C2·다운로드).
+          # 새 시계열은 increase()=0 이라 처음 나타난 값도 센다.
+          expr: |
+            label_replace(
+              sum by (source_namespace, source_workload, destination_namespace, destination_workload) (
+                (increase(hubble_drop_total{source_namespace="demo", reason="POLICY_DENIED"}[5m])
+                  unless (hubble_drop_total{source_namespace="demo", reason="POLICY_DENIED"} unless hubble_drop_total{source_namespace="demo", reason="POLICY_DENIED"} offset 5m))
+                or (hubble_drop_total{source_namespace="demo", reason="POLICY_DENIED"} unless hubble_drop_total{source_namespace="demo", reason="POLICY_DENIED"} offset 5m)
+              ), "namespace", "$1", "source_namespace", "(.*)"
+            ) > 3
+          labels: { severity: warning, kube_chatops: "true", category: security }
+          annotations:
+            summary: 'demo {{ $labels.source_workload }} 가 정책에 없는 곳({{ with $labels.destination_namespace }}{{ . }}/{{ end }}{{ or $labels.destination_workload "외부" }})으로 나가려다 5분 {{ $value | printf "%.0f" }}번 막힘'
+            description: '횡이동·외부 연결 시도 의심. 목적지 IP·포트: sum by (destination, port, verdict) (increase(hubble_flows_to_world_total{source="demo"}[15m])). 그 워크로드의 Tetragon 이벤트(loki security_events)도 같이 본다.'
+        - alert: DemoPortScan
+          # demo 에서 5분 동안 10개 넘는 서로 다른 목적지 포트로 연결 시도 (평소 8080, 53 두 개).
+          expr: |
+            label_replace(
+              count by (source_namespace) (
+                (increase(hubble_port_distribution_total{source_namespace="demo"}[5m]) > 0)
+                or (hubble_port_distribution_total{source_namespace="demo"} unless hubble_port_distribution_total{source_namespace="demo"} offset 5m)
+              ), "namespace", "$1", "source_namespace", "(.*)"
+            ) > 10
+          labels: { severity: critical, kube_chatops: "true", category: security }
+          annotations:
+            summary: 'demo 에서 5분 동안 서로 다른 포트 {{ $value | printf "%.0f" }}개로 연결 시도 (포트 스캔 의심)'
+            description: '평소에는 8080, 53 뿐이다. 어느 포트·대상: sum by (port, destination_namespace) (increase(hubble_port_distribution_total{source_namespace="demo"}[15m])), 어느 워크로드: hubble_drop_total{source_namespace="demo"}.'
+        - alert: DemoUnexpectedEgress
+          # demo 에서 클러스터 밖으로 실제로 나간 연결 (DNS 제외). demo 송신 정책은 클러스터 밖을 허용하지 않으므로 생기면 정책 구멍이다.
+          expr: |
+            label_replace(
+              sum by (source, destination, port) (
+                (increase(hubble_flows_to_world_total{source="demo", verdict="FORWARDED", port!="53"}[5m])
+                  unless (hubble_flows_to_world_total{source="demo", verdict="FORWARDED", port!="53"} unless hubble_flows_to_world_total{source="demo", verdict="FORWARDED", port!="53"} offset 5m))
+                or (hubble_flows_to_world_total{source="demo", verdict="FORWARDED", port!="53"} unless hubble_flows_to_world_total{source="demo", verdict="FORWARDED", port!="53"} offset 5m)
+              ), "namespace", "$1", "source", "(.*)"
+            ) > 0
+          labels: { severity: critical, kube_chatops: "true", category: security }
+          annotations:
+            summary: 'demo 에서 클러스터 밖 {{ $labels.destination }}:{{ $labels.port }} 로 연결이 나감 (정책 구멍)'
+            description: 'demo 송신 정책은 클러스터 밖을 막아야 한다. 어느 정책이 허용했는지 확인하고, 그 파드의 Tetragon 이벤트(loki security_events)를 본다.'
