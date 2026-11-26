@@ -2103,6 +2103,147 @@ data:
        }
       },
       {
+       "id": "1c89b1e4-a2a0-57bb-a80a-6e0a757fa8f6",
+       "name": "카드: 진행 중",
+       "type": "n8n-nodes-base.code",
+       "typeVersion": 2,
+       "position": [
+        2640,
+        780
+       ],
+       "parameters": {
+        "jsCode": "function cardEdit(p, status, button) {\n  const kst = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });\n  const src = (p.message?.blocks ?? []).filter(b => b.block_id !== `promote_status_${p.version}`);\n  const out = [];\n  for (const b of src) {\n    if (b.type !== 'actions' || !(b.elements ?? []).some(e => e.action_id === 'mlops_promote' && String(e.value) === String(p.version))) { out.push(b); continue; }\n    out.push({ type: 'context', block_id: `promote_status_${p.version}`, elements: [{ type: 'mrkdwn', text: `${status} · ${kst}` }] });\n    const elements = b.elements.map(e => {\n      if (e.action_id !== 'mlops_promote' || String(e.value) !== String(p.version)) return e;\n      if (button === 'keep') return e;\n      if (button === 'rollback') return { type: 'button', action_id: 'mlops_promote', value: String(p.version),\n        text: { type: 'plain_text', text: `v${p.version} 로 되돌리기` },\n        confirm: { title: { type: 'plain_text', text: `v${p.version} 로 되돌리기` }, confirm: { type: 'plain_text', text: '전환' }, deny: { type: 'plain_text', text: '취소' },\n          text: { type: 'mrkdwn', text: `서빙 모델을 v${p.version} 로 바꾸는 커밋을 올립니다. 이미 v${p.version} 가 서빙 중이면 아무 일도 하지 않습니다.` } } };\n      return null;\n    }).filter(Boolean);\n    if (elements.length) out.push({ ...b, elements });\n  }\n  return { channel: p.channel_id, ts: src.length ? (p.message_ts ?? null) : null, text: p.message?.text || `demo-anomaly v${p.version}`, blocks: out };\n}\n\nconst p = $('커밋 완료').item.json;\nreturn [{ json: { card: cardEdit(p, `:rocket: *v${p.version} 승격 진행 중* · <@${p.user_id}> 승인`, 'none') } }];"
+       }
+      },
+      {
+       "id": "0f8646a3-f3ba-5016-9f3b-a890336915cd",
+       "name": "카드 고치기 (진행)",
+       "type": "n8n-nodes-base.httpRequest",
+       "typeVersion": 4.2,
+       "position": [
+        2860,
+        780
+       ],
+       "parameters": {
+        "method": "POST",
+        "url": "http://chat-gateway.aiops.svc:8080/slack/update",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.card) }}",
+        "options": {
+         "timeout": 30000,
+         "response": {
+          "response": {
+           "fullResponse": true,
+           "neverError": true
+          }
+         }
+        }
+       },
+       "credentials": {
+        "httpHeaderAuth": {
+         "id": "kcgatewayapi0001",
+         "name": "chat-gateway API"
+        }
+       }
+      },
+      {
+       "id": "f4bc1391-c4d4-554f-ad6e-e3965fd51c92",
+       "name": "카드: 완료",
+       "type": "n8n-nodes-base.code",
+       "typeVersion": 2,
+       "position": [
+        3960,
+        380
+       ],
+       "parameters": {
+        "jsCode": "function cardEdit(p, status, button) {\n  const kst = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });\n  const src = (p.message?.blocks ?? []).filter(b => b.block_id !== `promote_status_${p.version}`);\n  const out = [];\n  for (const b of src) {\n    if (b.type !== 'actions' || !(b.elements ?? []).some(e => e.action_id === 'mlops_promote' && String(e.value) === String(p.version))) { out.push(b); continue; }\n    out.push({ type: 'context', block_id: `promote_status_${p.version}`, elements: [{ type: 'mrkdwn', text: `${status} · ${kst}` }] });\n    const elements = b.elements.map(e => {\n      if (e.action_id !== 'mlops_promote' || String(e.value) !== String(p.version)) return e;\n      if (button === 'keep') return e;\n      if (button === 'rollback') return { type: 'button', action_id: 'mlops_promote', value: String(p.version),\n        text: { type: 'plain_text', text: `v${p.version} 로 되돌리기` },\n        confirm: { title: { type: 'plain_text', text: `v${p.version} 로 되돌리기` }, confirm: { type: 'plain_text', text: '전환' }, deny: { type: 'plain_text', text: '취소' },\n          text: { type: 'mrkdwn', text: `서빙 모델을 v${p.version} 로 바꾸는 커밋을 올립니다. 이미 v${p.version} 가 서빙 중이면 아무 일도 하지 않습니다.` } } };\n      return null;\n    }).filter(Boolean);\n    if (elements.length) out.push({ ...b, elements });\n  }\n  return { channel: p.channel_id, ts: src.length ? (p.message_ts ?? null) : null, text: p.message?.text || `demo-anomaly v${p.version}`, blocks: out };\n}\n\nconst p = $('반영 확인').item.json;\nreturn [{ json: { card: cardEdit(p, `:white_check_mark: *v${p.version} 서빙 시작* · <@${p.user_id}> 승격`, 'rollback') } }];"
+       }
+      },
+      {
+       "id": "d206ba1b-e091-56c5-b9d4-c89edf27c482",
+       "name": "카드 고치기 (완료)",
+       "type": "n8n-nodes-base.httpRequest",
+       "typeVersion": 4.2,
+       "position": [
+        4180,
+        380
+       ],
+       "parameters": {
+        "method": "POST",
+        "url": "http://chat-gateway.aiops.svc:8080/slack/update",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.card) }}",
+        "options": {
+         "timeout": 30000,
+         "response": {
+          "response": {
+           "fullResponse": true,
+           "neverError": true
+          }
+         }
+        }
+       },
+       "credentials": {
+        "httpHeaderAuth": {
+         "id": "kcgatewayapi0001",
+         "name": "chat-gateway API"
+        }
+       }
+      },
+      {
+       "id": "68066193-876c-5d13-ae16-23a35e575ccf",
+       "name": "카드: 시간 초과",
+       "type": "n8n-nodes-base.code",
+       "typeVersion": 2,
+       "position": [
+        3960,
+        880
+       ],
+       "parameters": {
+        "jsCode": "function cardEdit(p, status, button) {\n  const kst = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });\n  const src = (p.message?.blocks ?? []).filter(b => b.block_id !== `promote_status_${p.version}`);\n  const out = [];\n  for (const b of src) {\n    if (b.type !== 'actions' || !(b.elements ?? []).some(e => e.action_id === 'mlops_promote' && String(e.value) === String(p.version))) { out.push(b); continue; }\n    out.push({ type: 'context', block_id: `promote_status_${p.version}`, elements: [{ type: 'mrkdwn', text: `${status} · ${kst}` }] });\n    const elements = b.elements.map(e => {\n      if (e.action_id !== 'mlops_promote' || String(e.value) !== String(p.version)) return e;\n      if (button === 'keep') return e;\n      if (button === 'rollback') return { type: 'button', action_id: 'mlops_promote', value: String(p.version),\n        text: { type: 'plain_text', text: `v${p.version} 로 되돌리기` },\n        confirm: { title: { type: 'plain_text', text: `v${p.version} 로 되돌리기` }, confirm: { type: 'plain_text', text: '전환' }, deny: { type: 'plain_text', text: '취소' },\n          text: { type: 'mrkdwn', text: `서빙 모델을 v${p.version} 로 바꾸는 커밋을 올립니다. 이미 v${p.version} 가 서빙 중이면 아무 일도 하지 않습니다.` } } };\n      return null;\n    }).filter(Boolean);\n    if (elements.length) out.push({ ...b, elements });\n  }\n  return { channel: p.channel_id, ts: src.length ? (p.message_ts ?? null) : null, text: p.message?.text || `demo-anomaly v${p.version}`, blocks: out };\n}\n\nconst p = $('반영 확인').item.json;\nreturn [{ json: { card: cardEdit(p, `:warning: *v${p.version} 승격이 15분 안에 반영되지 않음* (스레드 참고) · <@${p.user_id}>`, 'keep') } }];"
+       }
+      },
+      {
+       "id": "53cd8ce5-4839-5ffa-a66c-c2120caae406",
+       "name": "카드 고치기 (시간 초과)",
+       "type": "n8n-nodes-base.httpRequest",
+       "typeVersion": 4.2,
+       "position": [
+        4180,
+        880
+       ],
+       "parameters": {
+        "method": "POST",
+        "url": "http://chat-gateway.aiops.svc:8080/slack/update",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.card) }}",
+        "options": {
+         "timeout": 30000,
+         "response": {
+          "response": {
+           "fullResponse": true,
+           "neverError": true
+          }
+         }
+        }
+       },
+       "credentials": {
+        "httpHeaderAuth": {
+         "id": "kcgatewayapi0001",
+         "name": "chat-gateway API"
+        }
+       }
+      },
+      {
        "id": "134a00bb-3960-51e9-b366-1f7f0ec89d7e",
        "name": "1분 대기",
        "type": "n8n-nodes-base.wait",
@@ -2602,6 +2743,11 @@ data:
           "node": "커밋 알림",
           "type": "main",
           "index": 0
+         },
+         {
+          "node": "카드: 진행 중",
+          "type": "main",
+          "index": 0
          }
         ]
        ]
@@ -2611,6 +2757,78 @@ data:
         [
          {
           "node": "1분 대기",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
+      "카드: 진행 중": {
+       "main": [
+        [
+         {
+          "node": "카드 고치기 (진행)",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
+      "champion 지정": {
+       "main": [
+        [
+         {
+          "node": "카드: 완료",
+          "type": "main",
+          "index": 0
+         },
+         {
+          "node": "완료 답장",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
+      "카드: 완료": {
+       "main": [
+        [
+         {
+          "node": "카드 고치기 (완료)",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
+      "포기?": {
+       "main": [
+        [
+         {
+          "node": "카드: 시간 초과",
+          "type": "main",
+          "index": 0
+         },
+         {
+          "node": "시간 초과",
+          "type": "main",
+          "index": 0
+         }
+        ],
+        [
+         {
+          "node": "1분 대기",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
+      "카드: 시간 초과": {
+       "main": [
+        [
+         {
+          "node": "카드 고치기 (시간 초과)",
           "type": "main",
           "index": 0
          }
@@ -2668,40 +2886,11 @@ data:
         ]
        ]
       },
-      "champion 지정": {
-       "main": [
-        [
-         {
-          "node": "완료 답장",
-          "type": "main",
-          "index": 0
-         }
-        ]
-       ]
-      },
       "완료 답장": {
        "main": [
         [
          {
           "node": "Slack 글 정리",
-          "type": "main",
-          "index": 0
-         }
-        ]
-       ]
-      },
-      "포기?": {
-       "main": [
-        [
-         {
-          "node": "시간 초과",
-          "type": "main",
-          "index": 0
-         }
-        ],
-        [
-         {
-          "node": "1분 대기",
           "type": "main",
           "index": 0
          }
