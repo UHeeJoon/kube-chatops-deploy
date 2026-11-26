@@ -294,7 +294,7 @@ data:
        },
        "targets": [
         {
-         "expr": "sum((increase(caddy_http_request_duration_seconds_count{namespace=\"demo\", handler=\"waf\", code=\"403\"}[24h]) unless (caddy_http_request_duration_seconds_count{namespace=\"demo\", handler=\"waf\", code=\"403\"} unless caddy_http_request_duration_seconds_count{namespace=\"demo\", handler=\"waf\", code=\"403\"} offset 24h)) or (caddy_http_request_duration_seconds_count{namespace=\"demo\", handler=\"waf\", code=\"403\"} unless caddy_http_request_duration_seconds_count{namespace=\"demo\", handler=\"waf\", code=\"403\"} offset 24h)) or vector(0)",
+         "expr": "sum((increase(caddy_http_request_duration_seconds_count{namespace=\"demo\", code=\"403\"}[24h]) unless (caddy_http_request_duration_seconds_count{namespace=\"demo\", code=\"403\"} unless caddy_http_request_duration_seconds_count{namespace=\"demo\", code=\"403\"} offset 24h)) or (caddy_http_request_duration_seconds_count{namespace=\"demo\", code=\"403\"} unless caddy_http_request_duration_seconds_count{namespace=\"demo\", code=\"403\"} offset 24h)) or vector(0)",
          "legendFormat": "",
          "refId": "A",
          "datasource": {
@@ -811,7 +811,7 @@ data:
        },
        "targets": [
         {
-         "expr": "sum(increase(caddy_http_request_duration_seconds_count{namespace=\"demo\", handler=\"waf\", code=\"403\"}[$__interval]))",
+         "expr": "sum(increase(caddy_http_request_duration_seconds_count{namespace=\"demo\", code=\"403\"}[$__interval]))",
          "legendFormat": "WAF 규칙 (403)",
          "refId": "A",
          "datasource": {
