@@ -14,6 +14,11 @@ spec:
     groupWait: 30s
     groupInterval: 5m
     repeatInterval: 4h # 같은 알림으로 4시간 안에 다시 조사하지 않는다 (비용)
+  # 격리(DemoWebshellRepeated)가 뜨면 같은 파드의 차단 알림(DemoWebshellBlocked)은 따로 조사하지 않는다 (중복 조사 비용)
+  inhibitRules:
+    - sourceMatch: [{ name: alertname, value: DemoWebshellRepeated, matchType: "=" }]
+      targetMatch: [{ name: alertname, value: DemoWebshellBlocked, matchType: "=" }]
+      equal: [pod]
   receivers:
     - name: n8n
       webhookConfigs:

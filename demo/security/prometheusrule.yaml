@@ -24,3 +24,17 @@ spec:
           annotations:
             summary: '{{ $labels.pod }} 에서 웹 서버({{ $labels.binary }})가 셸 실행을 시도해 차단했습니다 (5분간 약 {{ $value | printf "%.0f" }}회)'
             action_taken: "Tetragon Sigkill: 셸을 띄우려던 자식 프로세스만 종료, 웹 서버는 유지"
+        - alert: DemoWebshellRepeated
+          # 같은 파드에서 5분에 3번 이상 차단 = 공격자가 실행 경로를 쥐고 계속 시도 중.
+          # 셸은 막혀도 언어 자체 기능(파일 읽기, 연결)으로 더 할 수 있어 → n8n 이 먼저 격리(auto_action)하고 보고한다.
+          # 이 알림이 뜨는 동안 같은 파드의 DemoWebshellBlocked 는 Alertmanager 가 억제한다 (demo/alerts).
+          expr: |
+            sum by (namespace, pod, binary) (
+              increase(tetragon_policy_events_total{namespace="demo", policy="webshell-block"}[5m]) > 0
+              or (tetragon_policy_events_total{namespace="demo", policy="webshell-block"}
+                  unless tetragon_policy_events_total{namespace="demo", policy="webshell-block"} offset 5m)
+            ) >= 2.5
+          labels: { severity: critical, kube_chatops: "true", category: security, auto_action: quarantine }
+          annotations:
+            summary: '{{ $labels.pod }} 에서 셸 실행 시도가 반복돼(5분간 약 {{ $value | printf "%.0f" }}회) 파드를 격리합니다'
+            action_taken: "n8n: 파드 라벨 제거(서비스 제외, 새 파드로 교체) + 격리 라벨(네트워크 전부 차단), 파드는 증거로 보존"

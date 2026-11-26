@@ -1,0 +1,25 @@
+# n8n(aiops/n8n-actions) 이 demo 에서 할 수 있는 보안 조치.
+# - WF-02 선 조치: 파드 조회 → 라벨 교체(patch)로 격리
+# - WF-03 승인 조치: 격리 파드 삭제 (워크플로가 격리 라벨이 붙은 파드인지 확인한 뒤에만 부른다)
+# Deployment 나 Service 는 바꿀 수 없다. 격리는 파드 라벨만으로 한다.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: n8n-security-actions
+  namespace: demo
+rules:
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get, patch, delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: n8n-security-actions
+  namespace: demo
+subjects:
+  - { kind: ServiceAccount, name: n8n-actions, namespace: aiops }
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: n8n-security-actions

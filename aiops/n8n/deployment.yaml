@@ -16,7 +16,7 @@ spec:
     metadata:
       labels: { app.kubernetes.io/name: n8n, app.kubernetes.io/part-of: kube-chatops }
       annotations:
-        kube-chatops/workflows-sha: 2df1a366dd431204
+        kube-chatops/workflows-sha: 7e5675c5de2fcb4a
     spec:
       automountServiceAccountToken: false
       enableServiceLinks: false # Service 이름이 n8n 이라 N8N_PORT=tcp://... 환경 변수가 생겨 n8n 설정과 충돌한다
@@ -27,7 +27,7 @@ spec:
         fsGroup: 1000
         seccompProfile: { type: RuntimeDefault }
       # 워크플로와 자격 증명을 Git(ConfigMap)과 Secret 에서 넣는다. 화면에서 고친 것은 재시작하면 Git 내용으로 덮인다.
-      # - 자격 증명: Secret 의 토큰으로 HTTP 헤더 인증 7개를 만든다 (ID 고정 → 다시 넣으면 덮어씀). 토큰은 이 컨테이너에만 env 로 준다.
+      # - 자격 증명: Secret 의 토큰으로 HTTP 헤더 인증 8개를 만든다 (ID 고정 → 다시 넣으면 덮어씀). 토큰은 이 컨테이너에만 env 로 준다.
       # - 워크플로: JSON 의 active 값대로 활성화한다.
       initContainers:
         - name: import
@@ -44,6 +44,7 @@ spec:
                   ["kchookmlops00001", "webhook: 학습 파이프라인", "MLOPS_WEBHOOK_TOKEN"],
                   ["kck8smlops000001", "kubernetes: mlops 워크플로 제출", "K8S_TOKEN"],
                   ["kcgithubdeploy01", "github: kube-chatops-deploy", "GITHUB_TOKEN"],
+                  ["kck8sactions0001", "kubernetes: demo 보안 조치", "K8S_ACTIONS_TOKEN"],
                 ];
                 // 토큰이 아직 없으면(예: Vault 에 알림 토큰 미등록) 무작위 값으로 만든다.
                 // 워크플로는 정상 게시되고, 그 webhook 은 진짜 토큰이 들어올 때까지 모든 요청을 거절한다.
@@ -91,6 +92,8 @@ spec:
               valueFrom: { secretKeyRef: { name: n8n-github, key: token, optional: true } }
             - name: K8S_TOKEN # ServiceAccount n8n-mlops: mlops 에 Workflow 만들기만 (mlops/pipeline/rbac.yaml)
               valueFrom: { secretKeyRef: { name: n8n-mlops-token, key: token, optional: true } }
+            - name: K8S_ACTIONS_TOKEN # ServiceAccount n8n-actions: demo 파드 조회·라벨 변경·삭제만 (demo/security/rbac.yaml)
+              valueFrom: { secretKeyRef: { name: n8n-actions-token, key: token, optional: true } }
           resources:
             requests: { cpu: 100m, memory: 256Mi }
             limits: { memory: 768Mi }

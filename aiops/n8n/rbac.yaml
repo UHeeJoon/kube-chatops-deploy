@@ -17,3 +17,20 @@ metadata:
   annotations:
     kubernetes.io/service-account.name: n8n-mlops
 type: kubernetes.io/service-account-token
+---
+# 보안 선 조치(WF-02 격리)와 승인 조치(WF-03 격리 파드 삭제)에 쓰는 신원. 권한은 demo/security/rbac.yaml (demo 파드 조회·라벨 변경·삭제만).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: n8n-actions
+  namespace: aiops
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: n8n-actions-token
+  namespace: aiops
+  annotations:
+    kubernetes.io/service-account.name: n8n-actions
+type: kubernetes.io/service-account-token
