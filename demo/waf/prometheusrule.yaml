@@ -24,6 +24,18 @@ spec:
           annotations:
             summary: 'demo 웹 방화벽이 5분 동안 {{ $value | printf "%.0f" }}건을 막음'
             description: 'Coraza(OWASP CRS) 가 SQLi·경로 조작·명령 주입·스캐너 같은 요청을 403 으로 막았다. 출발 IP 와 규칙은 Loki {namespace="demo", container="waf"} |= "WAF rule violation" 에서 본다.'
+        - alert: DemoRateLimited
+          # 한 IP 가 10초 100건을 넘겨 429 를 받은 요청이 5분에 50건 넘음 (스크레이핑, 무차별 대입, 작은 홍수).
+          # 이미 거절 중이라 보고용. 어떤 IP 인지는 mcp-loki waf_blocks 의 rate_limited.
+          expr: |
+            sum by (namespace) (
+              (increase(caddy_http_request_duration_seconds_count{namespace="demo", handler="rate_limit", code="429"}[5m]) unless (caddy_http_request_duration_seconds_count{namespace="demo", handler="rate_limit", code="429"} unless caddy_http_request_duration_seconds_count{namespace="demo", handler="rate_limit", code="429"} offset 5m))
+              or (caddy_http_request_duration_seconds_count{namespace="demo", handler="rate_limit", code="429"} unless caddy_http_request_duration_seconds_count{namespace="demo", handler="rate_limit", code="429"} offset 5m)
+            ) > 50
+          labels: { severity: warning, kube_chatops: "true", category: security }
+          annotations:
+            summary: 'demo 웹 방화벽이 요청 수 제한으로 5분 동안 {{ $value | printf "%.0f" }}건을 거절함'
+            description: '한 IP 가 10초에 100건을 넘겼다. 대량 요청이면 Cloudflare 쪽 차단이 더 싸다 (클러스터까지 오지 않음).'
         - alert: DemoWafDown
           expr: sum by (namespace) (up{namespace="demo", job="waf"}) < 1 or absent(up{namespace="demo", job="waf"})
           for: 3m
