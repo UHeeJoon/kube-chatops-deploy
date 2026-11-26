@@ -12,7 +12,7 @@ LOKI = {"type": "loki", "uid": "${loki}"}
 panels, y = [], 0
 PATH = 'path!~"/chaos/.*|/metrics|/healthz.*"'
 ALERTS = 'ALERTS{alertstate="firing", kube_chatops="true"}'
-WAF = 'caddy_http_request_duration_seconds_count{namespace="demo", handler="waf", code="403"}'
+WAF = 'caddy_http_request_duration_seconds_count{namespace="demo", code="403"}'
 TETRA = 'tetragon_policy_events_total{namespace="demo", policy="webshell-block"}'
 RL = 'caddy_http_request_duration_seconds_count{namespace="demo", handler="rate_limit", code="429"}'
 KC_FAIL = 'keycloak_user_events_total{event="login", error!=""}'
