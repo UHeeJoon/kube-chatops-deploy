@@ -16,7 +16,7 @@ spec:
     metadata:
       labels: { app.kubernetes.io/name: n8n, app.kubernetes.io/part-of: kube-chatops }
       annotations:
-        kube-chatops/workflows-sha: 1e7ce067fc573cea
+        kube-chatops/workflows-sha: 80fcb7f613da45f9
     spec:
       automountServiceAccountToken: false
       enableServiceLinks: false # Service 이름이 n8n 이라 N8N_PORT=tcp://... 환경 변수가 생겨 n8n 설정과 충돌한다
