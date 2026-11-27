@@ -21,7 +21,6 @@ spec:
       containers:
         - name: app
           image: ghcr.io/uheejoon/kube-chatops/demo-app@sha256:0750bcb9399a962363ae43121ed323ce1d1d8119f9df9c70aceceb4292577285
-          command: ["python", "-c", "import sys; sys.exit('설정 오류: ORDERS_DB_URL 환경 변수가 없습니다')"]
           ports:
             - { name: http, containerPort: 8080 }
           env:
