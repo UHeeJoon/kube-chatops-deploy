@@ -46,7 +46,7 @@ data:
         300
        ],
        "parameters": {
-        "jsCode": "// chat-gateway 가 보낸 공통 이벤트 JSON (body). 권한을 확인하고 다음 단계를 정한다.\nconst ROLES = {\"U0B330BGTJA\": \"operator\"};\nconst ev = $json.body ?? {};\nconst role = ROLES[ev.user_id] ?? 'none';\nlet mode = 'route', reply = '';\nif (role === 'none') {\n  mode = 'reply';\n  reply = `권한이 없습니다. 운영자에게 사용자 ID \\`${ev.user_id}\\` 등록을 요청하세요.`;\n} else if (ev.type === 'button_click' && String(ev.action?.id ?? '').startsWith('mlops_')) {\n  mode = 'mlops';  // 재학습·승격 버튼 → WF-04 (역할 확인은 WF-04 가 한다)\n} else if (ev.type === 'button_click' && String(ev.action?.id ?? '').startsWith('sec_')) {\n  mode = 'security';  // 보안 조치 버튼 → WF-03 (역할 확인은 WF-03 가 한다)\n} else if (ev.type === 'button_click') {\n  mode = 'reply';\n  reply = '승인 버튼 처리는 아직 준비 중입니다.';\n} else if ((t => t.length <= 20 && /^(사건|보고서|incidents?)(\\s|$)/i.test(t) && (/목록|기록|list|\\d/i.test(t) || /^\\S+$/.test(t)))((ev.text ?? '').trim())) {\n  // \"사건 목록\", \"사건 목록 조회\", \"사건 12 보여줘\" 처럼 뒤에 말이 붙거나 오타가 있어도 조회로 본다 (짧은 글만)\n  mode = 'incident';  // 사건 기록 조회 (agent DB, LLM 을 부르지 않는다)\n} else if (!(ev.text ?? '').trim()) {\n  mode = 'reply';\n  reply = '무엇을 도와드릴까요? 예: \"주문 조회가 느려졌어요, 원인 확인해줘\"';\n}\nreturn [{ json: { ...ev, role, mode, reply, started_at: Date.now() } }];"
+        "jsCode": "// chat-gateway 가 보낸 공통 이벤트 JSON (body). 권한을 확인하고 다음 단계를 정한다.\nconst ROLES = {\"U0B330BGTJA\": \"operator\"};\nconst ev = $json.body ?? {};\nconst role = ROLES[ev.user_id] ?? 'none';\nlet mode = 'route', reply = '';\nif (role === 'none') {\n  mode = 'reply';\n  reply = `권한이 없습니다. 운영자에게 사용자 ID \\`${ev.user_id}\\` 등록을 요청하세요.`;\n} else if (ev.type === 'button_click' && String(ev.action?.id ?? '').startsWith('mlops_')) {\n  mode = 'mlops';  // 재학습·승격 버튼 → WF-04 (역할 확인은 WF-04 가 한다)\n} else if (ev.type === 'button_click' && /^(sec|act)_/.test(String(ev.action?.id ?? ''))) {\n  mode = 'security';  // 조치 버튼(격리 파드 삭제, 재시작·롤백·증설 승인) → WF-03 (역할 확인은 WF-03 가 한다)\n} else if (ev.type === 'button_click') {\n  mode = 'reply';\n  reply = '승인 버튼 처리는 아직 준비 중입니다.';\n} else if ((t => t.length <= 20 && /^(사건|보고서|incidents?)(\\s|$)/i.test(t) && (/목록|기록|list|\\d/i.test(t) || /^\\S+$/.test(t)))((ev.text ?? '').trim())) {\n  // \"사건 목록\", \"사건 목록 조회\", \"사건 12 보여줘\" 처럼 뒤에 말이 붙거나 오타가 있어도 조회로 본다 (짧은 글만)\n  mode = 'incident';  // 사건 기록 조회 (agent DB, LLM 을 부르지 않는다)\n} else if (!(ev.text ?? '').trim()) {\n  mode = 'reply';\n  reply = '무엇을 도와드릴까요? 예: \"주문 조회가 느려졌어요, 원인 확인해줘\"';\n}\nreturn [{ json: { ...ev, role, mode, reply, started_at: Date.now() } }];"
        }
       },
       {
@@ -1013,7 +1013,7 @@ data:
         200
        ],
        "parameters": {
-        "jsCode": "// agent 결과 → Slack 메시지 (mrkdwn). 보고서는 상태 한 줄 + 영향/원인/조치/미확인 목록, 질문 답은 그대로.\nconst req = $('조사 요청').item.json;\nconst res = $json;\nconst secs = Math.round((Date.now() - req.started_at) / 1000);\nconst clip = (s, n) => { s = String(s ?? ''); return s.length > n ? s.slice(0, n - 1) + '…' : s; };\nconst list = (xs, n, w) => (xs ?? []).slice(0, n).map(x => `• ${clip(x, w)}`).join('\\n');\n// 모델이 일반 마크다운을 쓰면 Slack 형식으로 바꾼다 (**굵게** → *굵게*, - 목록 → •, # 제목 → 굵게)\nconst toSlack = t => String(t ?? '')\n  .replace(/\\*\\*(.+?)\\*\\*/g, '*$1*')\n  .replace(/^\\s*[-*] /gm, '• ')\n  .replace(/^#{1,6}\\s*(.+)$/gm, '*$1*');\nconst u0 = res.body?.usage ?? {};\nconst cost = (u0.cost_usd ?? 0) + (req.route_cost ?? 0);  // 의도 분류 비용까지 합친 요청 하나의 비용\nconst llm = (u0.llm_calls ?? 0) + (req.route_cost ? 1 : 0);\nconst stopped = res.body?.stopped_by && res.body.stopped_by !== 'done' ? ` · 한도 도달로 중단(${res.body.stopped_by})` : '';\nconst foot = { type: 'context', elements: [{ type: 'mrkdwn',\n  text: `도구 ${res.body?.tool_calls ?? 0}회 · LLM ${llm}회 · $${cost.toFixed(3)} · ${secs}초${stopped}` +\n    (res.body?.incident ? ` · 사건 #${res.body.incident.incident_id} 의 ${res.body.incident.report_no}번째 보고 (\\`@봇 사건 ${res.body.incident.incident_id}\\` 로 전체 보기)` : '') }] };\nconst sec = t => ({ type: 'section', text: { type: 'mrkdwn', text: clip(t, 2900) } });\nlet blocks = [], text, result;\nif (res.statusCode === 200 && res.body?.answer && !res.body?.report) {  // 질문 답, 또는 보고서 없이 글로 끝난 조사\n  result = 'answer';\n  const a = toSlack(res.body.answer);\n  text = clip(a, 300);\n  blocks = [sec(a), foot];\n} else if (res.statusCode === 200 && res.body?.report) {\n  const r = res.body.report;\n  result = 'ok';\n  const icon = { critical: ':red_circle:', warning: ':large_yellow_circle:', ok: ':large_green_circle:' }[r.status] ?? ':white_circle:';\n  const label = { critical: '장애', warning: '주의', ok: '정상' }[r.status] ?? '';\n  text = `${label} · ${clip(r.headline, 200)}`;\n  blocks.push(sec(`${icon} *${label}* · ${clip(r.headline, 150)}`));\n  if (r.impact?.length) blocks.push(sec(`*영향*\\n${list(r.impact, 3, 90)}`));\n  if (r.causes?.length) {\n    const lines = r.causes.slice(0, 2).map((c, i) =>\n      `${i + 1}. ${clip(c.title, 90)}  \\`${Math.round((c.confidence ?? 0) * 100)}%\\`\\n` +\n      (c.evidence ?? []).slice(0, 3).map(e => `      ◦ ${clip(e, 90)}`).join('\\n'));\n    blocks.push(sec(`*원인*\\n${lines.join('\\n')}`));\n  }\n  const risk = { low: '낮음', medium: '중간', high: '높음' };\n  const acts = (r.actions ?? []).filter(a => a.type !== 'none').slice(0, 2);\n  if (acts.length) {\n    blocks.push(sec(`*조치 제안* _(승인 전에는 실행하지 않음)_\\n` +\n      acts.map(a => `• \\`${a.type}\\` ${a.target} · 위험 ${risk[a.risk] ?? a.risk}\\n      ◦ ${clip(a.reason, 90)}`).join('\\n')));\n  }\n  if (r.data_gaps?.length) blocks.push(sec(`*확인 못 한 것*\\n${list(r.data_gaps, 2, 90)}`));\n  const q = req.quarantine;\n  if (q?.done) {  // 선 조치로 격리한 파드: 조사가 끝나면 사람이 지운다\n    blocks.push(sec(`:lock: *격리된 파드* \\`${q.namespace}/${q.pod}\\`\\n• 증거 확인: \\`kubectl -n ${q.namespace} logs ${q.pod}\\` · \\`kubectl -n ${q.namespace} exec ${q.pod} -- ...\\` (네트워크만 막혀 있음)\\n• 원래 라벨은 어노테이션 \\`security.kube-chatops/original-labels\\``));\n    blocks.push({ type: 'actions', elements: [{ type: 'button', style: 'danger', action_id: 'sec_delete_pod', value: `${q.namespace}/${q.pod}`,\n      text: { type: 'plain_text', text: '격리 파드 삭제 (조사 끝)' },\n      confirm: { title: { type: 'plain_text', text: '격리 파드 삭제' }, confirm: { type: 'plain_text', text: '삭제' }, deny: { type: 'plain_text', text: '취소' },\n        text: { type: 'mrkdwn', text: `\\`${q.pod}\\` 를 지웁니다. 로그와 파일 같은 증거도 함께 사라집니다.` } } }] });\n  }\n  blocks.push({ type: 'divider' });\n  blocks.push(foot);\n} else if (res.statusCode === 429) {\n  result = 'budget'; text = ':warning: 오늘 AI 사용 예산을 다 써서 조사하지 못했습니다.';\n} else {\n  result = 'error'; text = `:warning: 조사에 실패했습니다 (agent ${res.statusCode ?? '연결 실패'}). 잠시 후 다시 시도해 주세요.`;\n}\nreturn [{ json: { channel: req.channel_id, ts: $('조사 중 표시').item.json.body?.ts, text, blocks: blocks.length ? blocks : null,\n  audit: { flow: 'wf-02-investigate', result, source: req.source, user_id: req.user_id, role: req.role,\n    channel_id: req.channel_id, thread_id: req.thread_id, seconds: secs, agent_status: res.statusCode,\n    mode: req.mode, cost_usd: cost, tool_calls: res.body?.tool_calls ?? 0, stopped_by: res.body?.stopped_by ?? null,\n    quarantine: req.quarantine ? `${req.quarantine.pod}:${req.quarantine.done ? 'done' : 'failed'}` : null,\n    // 어떤 알림의 조사였는지 (공격 재현 평가 scripts/attack-replay.py 가 보고를 공격과 짝짓는 데 쓴다)\n    incident_id: res.body?.incident?.incident_id ?? null,\n    alert: req.alert?.alerts?.[0]?.labels?.alertname ?? null,\n    alert_pod: req.alert?.alerts?.[0]?.labels?.pod ?? req.alert?.alerts?.[0]?.labels?.source_workload ?? null } } }];"
+        "jsCode": "// agent 결과 → Slack 메시지 (mrkdwn). 보고서는 상태 한 줄 + 영향/원인/조치/미확인 목록, 질문 답은 그대로.\nconst req = $('조사 요청').item.json;\nconst res = $json;\nconst secs = Math.round((Date.now() - req.started_at) / 1000);\nconst clip = (s, n) => { s = String(s ?? ''); return s.length > n ? s.slice(0, n - 1) + '…' : s; };\nconst list = (xs, n, w) => (xs ?? []).slice(0, n).map(x => `• ${clip(x, w)}`).join('\\n');\n// 모델이 일반 마크다운을 쓰면 Slack 형식으로 바꾼다 (**굵게** → *굵게*, - 목록 → •, # 제목 → 굵게)\nconst toSlack = t => String(t ?? '')\n  .replace(/\\*\\*(.+?)\\*\\*/g, '*$1*')\n  .replace(/^\\s*[-*] /gm, '• ')\n  .replace(/^#{1,6}\\s*(.+)$/gm, '*$1*');\nconst u0 = res.body?.usage ?? {};\nconst cost = (u0.cost_usd ?? 0) + (req.route_cost ?? 0);  // 의도 분류 비용까지 합친 요청 하나의 비용\nconst llm = (u0.llm_calls ?? 0) + (req.route_cost ? 1 : 0);\nconst stopped = res.body?.stopped_by && res.body.stopped_by !== 'done' ? ` · 한도 도달로 중단(${res.body.stopped_by})` : '';\nconst foot = { type: 'context', elements: [{ type: 'mrkdwn',\n  text: `도구 ${res.body?.tool_calls ?? 0}회 · LLM ${llm}회 · $${cost.toFixed(3)} · ${secs}초${stopped}` +\n    (res.body?.incident ? ` · 사건 #${res.body.incident.incident_id} 의 ${res.body.incident.report_no}번째 보고 (\\`@봇 사건 ${res.body.incident.incident_id}\\` 로 전체 보기)` : '') }] };\nconst sec = t => ({ type: 'section', text: { type: 'mrkdwn', text: clip(t, 2900) } });\nlet blocks = [], text, result;\nif (res.statusCode === 200 && res.body?.answer && !res.body?.report) {  // 질문 답, 또는 보고서 없이 글로 끝난 조사\n  result = 'answer';\n  const a = toSlack(res.body.answer);\n  text = clip(a, 300);\n  blocks = [sec(a), foot];\n} else if (res.statusCode === 200 && res.body?.report) {\n  const r = res.body.report;\n  result = 'ok';\n  const icon = { critical: ':red_circle:', warning: ':large_yellow_circle:', ok: ':large_green_circle:' }[r.status] ?? ':white_circle:';\n  const label = { critical: '장애', warning: '주의', ok: '정상' }[r.status] ?? '';\n  text = `${label} · ${clip(r.headline, 200)}`;\n  blocks.push(sec(`${icon} *${label}* · ${clip(r.headline, 150)}`));\n  if (r.impact?.length) blocks.push(sec(`*영향*\\n${list(r.impact, 3, 90)}`));\n  if (r.causes?.length) {\n    const lines = r.causes.slice(0, 2).map((c, i) =>\n      `${i + 1}. ${clip(c.title, 90)}  \\`${Math.round((c.confidence ?? 0) * 100)}%\\`\\n` +\n      (c.evidence ?? []).slice(0, 3).map(e => `      ◦ ${clip(e, 90)}`).join('\\n'));\n    blocks.push(sec(`*원인*\\n${lines.join('\\n')}`));\n  }\n  const risk = { low: '낮음', medium: '중간', high: '높음' };\n  const acts = (r.actions ?? []).filter(a => a.type !== 'none').slice(0, 2);\n  if (acts.length) {\n    blocks.push(sec(`*조치 제안* _(승인 전에는 실행하지 않음)_\\n` +\n      acts.map(a => `• \\`${a.type}\\` ${a.target} · 위험 ${risk[a.risk] ?? a.risk}\\n      ◦ ${clip(a.reason, 90)}`).join('\\n')));\n  }\n  // 승인 버튼. 글자와 확인 창은 여기 고정 문구만 쓴다 (모델이 쓴 문장을 버튼에 넣지 않는다). 대상은 허용 목록에 있는 것만.\n  const APPROVE = {\n    restart: ['재시작 승인', '파드를 하나씩 다시 시작합니다 (rollout restart). 서비스는 유지됩니다. 메모리와 주입된 장애 상태가 초기화됩니다.'],\n    rollback: ['롤백 승인', '배포 저장소에서 이미지를 직전 버전으로 되돌리는 커밋을 올립니다. 검사 → Argo CD 반영까지 3~5분 걸립니다.'],\n    scale: ['증설 승인 (+1)', 'replicas 를 1 늘리는 커밋을 배포 저장소에 올립니다 (최대 4). 반영까지 3~5분 걸립니다.'],\n  };\n  const btns = [];\n  for (const a of acts) {\n    const m = /(?:^|\\/)(demo-app)$/.exec(String(a.target ?? '').trim());\n    if (a.type === 'retrain' && !btns.some(b => b.action_id === 'mlops_retrain')) {\n      btns.push({ type: 'button', action_id: 'mlops_retrain', value: 'anomaly-train', text: { type: 'plain_text', text: '재학습 시작' } });\n    } else if (m && APPROVE[a.type] && !btns.some(b => b.action_id === `act_${a.type}`)) {\n      btns.push({ type: 'button', action_id: `act_${a.type}`, value: `demo/${m[1]}`, text: { type: 'plain_text', text: APPROVE[a.type][0] },\n        confirm: { title: { type: 'plain_text', text: `${a.type} demo/${m[1]}` }, confirm: { type: 'plain_text', text: '실행' }, deny: { type: 'plain_text', text: '취소' },\n          text: { type: 'mrkdwn', text: `\\`demo/${m[1]}\\` ${APPROVE[a.type][1]}` } } });\n    }\n  }\n  if (btns.length) blocks.push({ type: 'actions', elements: btns });\n  if (r.data_gaps?.length) blocks.push(sec(`*확인 못 한 것*\\n${list(r.data_gaps, 2, 90)}`));\n  const q = req.quarantine;\n  if (q?.done) {  // 선 조치로 격리한 파드: 조사가 끝나면 사람이 지운다\n    blocks.push(sec(`:lock: *격리된 파드* \\`${q.namespace}/${q.pod}\\`\\n• 증거 확인: \\`kubectl -n ${q.namespace} logs ${q.pod}\\` · \\`kubectl -n ${q.namespace} exec ${q.pod} -- ...\\` (네트워크만 막혀 있음)\\n• 원래 라벨은 어노테이션 \\`security.kube-chatops/original-labels\\``));\n    blocks.push({ type: 'actions', elements: [{ type: 'button', style: 'danger', action_id: 'sec_delete_pod', value: `${q.namespace}/${q.pod}`,\n      text: { type: 'plain_text', text: '격리 파드 삭제 (조사 끝)' },\n      confirm: { title: { type: 'plain_text', text: '격리 파드 삭제' }, confirm: { type: 'plain_text', text: '삭제' }, deny: { type: 'plain_text', text: '취소' },\n        text: { type: 'mrkdwn', text: `\\`${q.pod}\\` 를 지웁니다. 로그와 파일 같은 증거도 함께 사라집니다.` } } }] });\n  }\n  blocks.push({ type: 'divider' });\n  blocks.push(foot);\n} else if (res.statusCode === 429) {\n  result = 'budget'; text = ':warning: 오늘 AI 사용 예산을 다 써서 조사하지 못했습니다.';\n} else {\n  result = 'error'; text = `:warning: 조사에 실패했습니다 (agent ${res.statusCode ?? '연결 실패'}). 잠시 후 다시 시도해 주세요.`;\n}\nreturn [{ json: { channel: req.channel_id, ts: $('조사 중 표시').item.json.body?.ts, text, blocks: blocks.length ? blocks : null,\n  audit: { flow: 'wf-02-investigate', result, source: req.source, user_id: req.user_id, role: req.role,\n    channel_id: req.channel_id, thread_id: req.thread_id, seconds: secs, agent_status: res.statusCode,\n    mode: req.mode, cost_usd: cost, tool_calls: res.body?.tool_calls ?? 0, stopped_by: res.body?.stopped_by ?? null,\n    quarantine: req.quarantine ? `${req.quarantine.pod}:${req.quarantine.done ? 'done' : 'failed'}` : null,\n    // 어떤 알림의 조사였는지 (공격 재현 평가 scripts/attack-replay.py 가 보고를 공격과 짝짓는 데 쓴다)\n    incident_id: res.body?.incident?.incident_id ?? null,\n    alert: req.alert?.alerts?.[0]?.labels?.alertname ?? null,\n    alert_pod: req.alert?.alerts?.[0]?.labels?.pod ?? req.alert?.alerts?.[0]?.labels?.source_workload ?? null } } }];"
        }
       },
       {
@@ -1325,7 +1325,7 @@ data:
         300
        ],
        "parameters": {
-        "jsCode": "const ev = $json;\nconst id = ev.action?.id ?? '';\nconst [namespace, pod] = String(ev.action?.value ?? '').split('/');\nlet op = id === 'sec_delete_pod' ? 'delete_pod' : 'unknown', note = '';\nif (ev.role !== 'operator') { op = 'deny'; note = '조치 버튼은 operator 만 누를 수 있습니다.'; }\nelse if (op === 'unknown') note = `모르는 조치입니다 (${id}).`;\nelse if (namespace !== 'demo' || !/^[a-z0-9.-]{1,253}$/.test(pod ?? '')) { op = 'deny'; note = '대상이 올바르지 않습니다.'; }\nreturn [{ json: { ...ev, op, namespace, pod, note } }];"
+        "jsCode": "const DEPLOYS = ['demo-app'];\nconst ev = $json;\nconst id = ev.action?.id ?? '';\nconst [namespace, name] = String(ev.action?.value ?? '').split('/');\nlet op = id === 'sec_delete_pod' ? 'delete_pod' : ['act_restart', 'act_rollback', 'act_scale'].includes(id) ? id.slice(4) : 'unknown', note = '';\nif (ev.role !== 'operator') { op = 'deny'; note = '조치 버튼은 operator 만 누를 수 있습니다.'; }\nelse if (op === 'unknown') note = `모르는 조치입니다 (${id}).`;\nelse if (op === 'delete_pod' && (namespace !== 'demo' || !/^[a-z0-9.-]{1,253}$/.test(name ?? ''))) { op = 'deny'; note = '대상이 올바르지 않습니다.'; }\nelse if (op !== 'delete_pod' && (namespace !== 'demo' || !DEPLOYS.includes(name))) { op = 'deny'; note = `조치할 수 없는 대상입니다 (허용: ${DEPLOYS.map(d => 'demo/' + d).join(', ')}).`; }\nreturn [{ json: { ...ev, op, namespace, pod: op === 'delete_pod' ? name : null, deploy: op !== 'delete_pod' && op !== 'deny' && op !== 'unknown' ? name : null, note } }];"
        }
       },
       {
@@ -1481,7 +1481,511 @@ data:
         100
        ],
        "parameters": {
-        "jsCode": "const req = $('확인').item.json;\nconst ok = $json.statusCode === 200 || $json.statusCode === 202;\nreturn [{ json: { ...req, note: ok ? `:wastebasket: 격리 파드 \\`${req.pod}\\` 를 삭제했습니다 (<@${req.user_id}>).` : `삭제 실패 (${$json.statusCode}).`,\n  result: ok ? 'deleted' : 'delete_failed' } }];"
+        "jsCode": "const req = $('확인').item.json;\nconst ok = $json.statusCode === 200 || $json.statusCode === 202;\nreturn [{ json: { ...req, note: ok ? `:wastebasket: 격리 파드 \\`${req.pod}\\` 를 삭제했습니다 (<@${req.user_id}>).` : `삭제 실패 (${$json.statusCode}).`,\n  result: ok ? 'deleted' : 'delete_failed', done: ok ? `격리 파드 \\`${req.pod}\\` 삭제` : null } }];"
+       }
+      },
+      {
+       "id": "f4943526-2cad-592a-ba90-d88843678ffa",
+       "name": "재시작?",
+       "type": "n8n-nodes-base.if",
+       "typeVersion": 2.2,
+       "position": [
+        660,
+        500
+       ],
+       "parameters": {
+        "conditions": {
+         "options": {
+          "caseSensitive": true,
+          "leftValue": "",
+          "typeValidation": "loose",
+          "version": 2
+         },
+         "conditions": [
+          {
+           "id": "3bb100b1-de88-55fb-afaf-37296c3372fa",
+           "leftValue": "={{ $json.op === 'restart' }}",
+           "rightValue": "",
+           "operator": {
+            "type": "boolean",
+            "operation": "true",
+            "singleValue": true
+           }
+          }
+         ],
+         "combinator": "and"
+        },
+        "options": {}
+       }
+      },
+      {
+       "id": "040d698c-363f-58c6-bb83-78b4379f2f29",
+       "name": "Deployment 확인",
+       "type": "n8n-nodes-base.httpRequest",
+       "typeVersion": 4.2,
+       "position": [
+        880,
+        440
+       ],
+       "parameters": {
+        "method": "GET",
+        "url": "={{ 'https://kubernetes.default.svc/apis/apps/v1/namespaces/' + $json.namespace + '/deployments/' + $json.deploy }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+         "timeout": 30000,
+         "response": {
+          "response": {
+           "fullResponse": true,
+           "neverError": true
+          }
+         }
+        }
+       },
+       "credentials": {
+        "httpHeaderAuth": {
+         "id": "kck8sactions0001",
+         "name": "kubernetes: demo 보안 조치"
+        }
+       }
+      },
+      {
+       "id": "6bf6a14f-103c-55ef-828f-157e32762312",
+       "name": "재시작 판단",
+       "type": "n8n-nodes-base.code",
+       "typeVersion": 2,
+       "position": [
+        1100,
+        440
+       ],
+       "parameters": {
+        "jsCode": "// 지금 상태를 보고 재시작해도 되는지 정한다. 5분 안에 다시 시작한 적이 있으면 거절 (버튼 연타, 재시작 반복 방지).\nconst req = $('요청 정리').item.json;\nconst res = $json;\nif (res.statusCode !== 200) return [{ json: { ...req, ok: false, result: 'refused', note: `Deployment 조회 실패 (${res.statusCode}).` } }];\nconst last = res.body.spec?.template?.metadata?.annotations?.['kubectl.kubernetes.io/restartedAt'];\nconst ago = last ? (Date.now() - Date.parse(last)) / 60000 : Infinity;\nif (ago < 5) return [{ json: { ...req, ok: false, result: 'refused', note: `\\`${req.deploy}\\` 는 ${Math.round(ago)}분 전에 재시작했습니다. 5분 안에는 다시 하지 않습니다.` } }];\nconst now = new Date().toISOString();\nreturn [{ json: { ...req, ok: true, replicas: res.body.spec?.replicas ?? null,\n  patch: { spec: { template: { metadata: { annotations: { 'kubectl.kubernetes.io/restartedAt': now, 'kube-chatops/restarted-by': `slack:${req.user_id}` } } } } } } }];"
+       }
+      },
+      {
+       "id": "de9488e8-9cb2-5964-9847-8fb2fdb0c7d1",
+       "name": "재시작 가능?",
+       "type": "n8n-nodes-base.if",
+       "typeVersion": 2.2,
+       "position": [
+        1320,
+        440
+       ],
+       "parameters": {
+        "conditions": {
+         "options": {
+          "caseSensitive": true,
+          "leftValue": "",
+          "typeValidation": "loose",
+          "version": 2
+         },
+         "conditions": [
+          {
+           "id": "6a23a693-9228-55d3-b134-071e94890de3",
+           "leftValue": "={{ $json.ok }}",
+           "rightValue": "",
+           "operator": {
+            "type": "boolean",
+            "operation": "true",
+            "singleValue": true
+           }
+          }
+         ],
+         "combinator": "and"
+        },
+        "options": {}
+       }
+      },
+      {
+       "id": "f549b20f-daa7-530c-b3c2-f05346e43de4",
+       "name": "재시작",
+       "type": "n8n-nodes-base.httpRequest",
+       "typeVersion": 4.2,
+       "position": [
+        1540,
+        380
+       ],
+       "parameters": {
+        "method": "PATCH",
+        "url": "={{ 'https://kubernetes.default.svc/apis/apps/v1/namespaces/' + $json.namespace + '/deployments/' + $json.deploy }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+         "parameters": [
+          {
+           "name": "Content-Type",
+           "value": "application/merge-patch+json"
+          }
+         ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.patch) }}",
+        "options": {
+         "timeout": 30000,
+         "response": {
+          "response": {
+           "fullResponse": true,
+           "neverError": true
+          }
+         }
+        }
+       },
+       "credentials": {
+        "httpHeaderAuth": {
+         "id": "kck8sactions0001",
+         "name": "kubernetes: demo 보안 조치"
+        }
+       }
+      },
+      {
+       "id": "593e9401-0357-5fe0-a690-ffdbb0dd6e71",
+       "name": "재시작 결과",
+       "type": "n8n-nodes-base.code",
+       "typeVersion": 2,
+       "position": [
+        1760,
+        380
+       ],
+       "parameters": {
+        "jsCode": "const req = $('재시작 판단').item.json;\nconst ok = $json.statusCode === 200;\nreturn [{ json: { ...req, result: ok ? 'restarted' : 'restart_failed', done: ok ? `\\`restart\\` ${req.namespace}/${req.deploy}` : null,\n  note: ok ? `:arrows_counterclockwise: <@${req.user_id}> 승인으로 \\`${req.namespace}/${req.deploy}\\` 를 재시작합니다 (파드 ${req.replicas ?? '?'}개를 하나씩 교체, 1분쯤 걸림).`\n    : `재시작 실패 (${$json.statusCode}): ${JSON.stringify($json.body?.message ?? '').slice(0, 200)}` } }];"
+       }
+      },
+      {
+       "id": "558e5be8-6151-5ab8-bb7e-bf8664c8d9e0",
+       "name": "Git 조치?",
+       "type": "n8n-nodes-base.if",
+       "typeVersion": 2.2,
+       "position": [
+        880,
+        700
+       ],
+       "parameters": {
+        "conditions": {
+         "options": {
+          "caseSensitive": true,
+          "leftValue": "",
+          "typeValidation": "loose",
+          "version": 2
+         },
+         "conditions": [
+          {
+           "id": "bafc3fc3-3f06-5975-931a-cda90e8f1529",
+           "leftValue": "={{ ['scale', 'rollback'].includes($json.op) }}",
+           "rightValue": "",
+           "operator": {
+            "type": "boolean",
+            "operation": "true",
+            "singleValue": true
+           }
+          }
+         ],
+         "combinator": "and"
+        },
+        "options": {}
+       }
+      },
+      {
+       "id": "9c740326-a7ca-5803-8e19-e1a050808e0a",
+       "name": "현재 파일",
+       "type": "n8n-nodes-base.httpRequest",
+       "typeVersion": 4.2,
+       "position": [
+        1100,
+        700
+       ],
+       "parameters": {
+        "method": "GET",
+        "url": "={{ 'https://api.github.com/repos/UHeeJoon/kube-chatops-deploy/contents/demo/' + $json.deploy + '/deployment.yaml?ref=' + 'main' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+         "parameters": [
+          {
+           "name": "Accept",
+           "value": "application/vnd.github+json"
+          },
+          {
+           "name": "X-GitHub-Api-Version",
+           "value": "2022-11-28"
+          },
+          {
+           "name": "User-Agent",
+           "value": "kube-chatops-n8n"
+          }
+         ]
+        },
+        "options": {
+         "timeout": 30000,
+         "response": {
+          "response": {
+           "fullResponse": true,
+           "neverError": true
+          }
+         }
+        }
+       },
+       "credentials": {
+        "httpHeaderAuth": {
+         "id": "kcgithubdeploy01",
+         "name": "github: kube-chatops-deploy"
+        }
+       }
+      },
+      {
+       "id": "13ead66e-261c-5f72-a6fa-5b3a8da9ab3a",
+       "name": "롤백?",
+       "type": "n8n-nodes-base.if",
+       "typeVersion": 2.2,
+       "position": [
+        1320,
+        700
+       ],
+       "parameters": {
+        "conditions": {
+         "options": {
+          "caseSensitive": true,
+          "leftValue": "",
+          "typeValidation": "loose",
+          "version": 2
+         },
+         "conditions": [
+          {
+           "id": "3f1095db-a7bf-5585-af0f-b2ee273628b6",
+           "leftValue": "={{ $('요청 정리').item.json.op === 'rollback' }}",
+           "rightValue": "",
+           "operator": {
+            "type": "boolean",
+            "operation": "true",
+            "singleValue": true
+           }
+          }
+         ],
+         "combinator": "and"
+        },
+        "options": {}
+       }
+      },
+      {
+       "id": "3619f0dd-f3b2-5daf-85c6-4bfc08fcf140",
+       "name": "최근 커밋",
+       "type": "n8n-nodes-base.httpRequest",
+       "typeVersion": 4.2,
+       "position": [
+        1540,
+        620
+       ],
+       "parameters": {
+        "method": "GET",
+        "url": "={{ 'https://api.github.com/repos/UHeeJoon/kube-chatops-deploy/commits?sha=main&per_page=2&path=demo/' + $('요청 정리').item.json.deploy + '/deployment.yaml' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+         "parameters": [
+          {
+           "name": "Accept",
+           "value": "application/vnd.github+json"
+          },
+          {
+           "name": "X-GitHub-Api-Version",
+           "value": "2022-11-28"
+          },
+          {
+           "name": "User-Agent",
+           "value": "kube-chatops-n8n"
+          }
+         ]
+        },
+        "options": {
+         "timeout": 30000,
+         "response": {
+          "response": {
+           "fullResponse": true,
+           "neverError": true
+          }
+         }
+        }
+       },
+       "credentials": {
+        "httpHeaderAuth": {
+         "id": "kcgithubdeploy01",
+         "name": "github: kube-chatops-deploy"
+        }
+       }
+      },
+      {
+       "id": "b97d1321-93dc-5cd5-9ee1-3c7dee42b3a4",
+       "name": "직전 커밋",
+       "type": "n8n-nodes-base.code",
+       "typeVersion": 2,
+       "position": [
+        1760,
+        620
+       ],
+       "parameters": {
+        "jsCode": "// 이 파일을 바꾼 최근 커밋 2개 중 두 번째(직전 상태)를 고른다.\nconst req = $('요청 정리').item.json;\nconst list = Array.isArray($json.body) ? $json.body : [];\nreturn [{ json: { ...req, prev_sha: list[1]?.sha ?? 'main' } }];"
+       }
+      },
+      {
+       "id": "dfcc9293-ed9e-5ed6-9976-f9af53f3e675",
+       "name": "이전 파일",
+       "type": "n8n-nodes-base.httpRequest",
+       "typeVersion": 4.2,
+       "position": [
+        1980,
+        620
+       ],
+       "parameters": {
+        "method": "GET",
+        "url": "={{ 'https://api.github.com/repos/UHeeJoon/kube-chatops-deploy/contents/demo/' + $json.deploy + '/deployment.yaml?ref=' + $json.prev_sha }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+         "parameters": [
+          {
+           "name": "Accept",
+           "value": "application/vnd.github+json"
+          },
+          {
+           "name": "X-GitHub-Api-Version",
+           "value": "2022-11-28"
+          },
+          {
+           "name": "User-Agent",
+           "value": "kube-chatops-n8n"
+          }
+         ]
+        },
+        "options": {
+         "timeout": 30000,
+         "response": {
+          "response": {
+           "fullResponse": true,
+           "neverError": true
+          }
+         }
+        }
+       },
+       "credentials": {
+        "httpHeaderAuth": {
+         "id": "kcgithubdeploy01",
+         "name": "github: kube-chatops-deploy"
+        }
+       }
+      },
+      {
+       "id": "8433cfe4-e48b-5a5f-9c6f-d1b4fb78d296",
+       "name": "파일 고치기",
+       "type": "n8n-nodes-base.code",
+       "typeVersion": 2,
+       "position": [
+        2200,
+        700
+       ],
+       "parameters": {
+        "jsCode": "// 배포 저장소의 deployment.yaml 에서 한 줄만 바꾼다. 증설: replicas +1 (최대 4). 롤백: 이미지 digest 를 직전 커밋의 것으로.\nconst MAX_REPLICAS = 4;\nconst req = $('요청 정리').item.json;\nconst cur = $('현재 파일').item.json;\nconst refuse = note => [{ json: { ...req, ok: false, result: 'refused', note } }];\nif (cur.statusCode !== 200) return refuse(`배포 저장소 파일 읽기 실패 (${cur.statusCode}).`);\nconst src = Buffer.from(cur.body.content, 'base64').toString('utf8');\nlet out, what, message;\nif (req.op === 'scale') {\n  const m = src.match(/^(\\s*replicas: )(\\d+)\\s*$/m);\n  if (!m) return refuse('replicas 줄을 찾지 못했습니다.');\n  const n = Number(m[2]);\n  if (n >= MAX_REPLICAS) return refuse(`\\`${req.deploy}\\` 는 이미 replicas ${n} 입니다 (최대 ${MAX_REPLICAS}). 더 늘리지 않습니다.`);\n  out = src.replace(m[0], `${m[1]}${n + 1}`);\n  what = `replicas ${n} → ${n + 1}`;\n  message = `demo: ${req.deploy} replicas ${n} → ${n + 1} (Slack 승인 ${req.user_id})`;\n} else {\n  const re = new RegExp(`(image: ghcr\\\\.io/uheejoon/kube-chatops/${req.deploy}@)(sha256:[0-9a-f]{64})`);\n  const prev = $json;\n  if (prev.statusCode !== 200) return refuse(`이전 버전 파일 읽기 실패 (${prev.statusCode}).`);\n  const old = Buffer.from(prev.body.content, 'base64').toString('utf8');\n  const c = src.match(re), p = old.match(re);\n  if (!c || !p) return refuse('이미지 줄을 찾지 못했습니다.');\n  if (c[2] === p[2]) return refuse('이 파일의 직전 변경은 이미지 변경이 아니어서 되돌릴 이전 이미지가 없습니다. 배포 저장소 기록에서 직접 고르세요.');\n  out = src.replace(re, `$1${p[2]}`);\n  what = `이미지 ${c[2].slice(7, 19)} → ${p[2].slice(7, 19)}`;\n  message = `demo: ${req.deploy} 직전 이미지로 롤백 (Slack 승인 ${req.user_id})\\n\\n${c[2]} → ${p[2]}`;\n}\nreturn [{ json: { ...req, ok: true, what, put: { message, content: Buffer.from(out, 'utf8').toString('base64'), sha: cur.body.sha, branch: 'main' } } }];"
+       }
+      },
+      {
+       "id": "518947e6-d039-52db-a203-aa77cdcca113",
+       "name": "커밋할 것?",
+       "type": "n8n-nodes-base.if",
+       "typeVersion": 2.2,
+       "position": [
+        2420,
+        700
+       ],
+       "parameters": {
+        "conditions": {
+         "options": {
+          "caseSensitive": true,
+          "leftValue": "",
+          "typeValidation": "loose",
+          "version": 2
+         },
+         "conditions": [
+          {
+           "id": "5e34678b-50d5-5acb-852d-d87503185c5d",
+           "leftValue": "={{ $json.ok }}",
+           "rightValue": "",
+           "operator": {
+            "type": "boolean",
+            "operation": "true",
+            "singleValue": true
+           }
+          }
+         ],
+         "combinator": "and"
+        },
+        "options": {}
+       }
+      },
+      {
+       "id": "5b624cf6-8261-5de2-b4d3-7386bb2e2f4e",
+       "name": "커밋",
+       "type": "n8n-nodes-base.httpRequest",
+       "typeVersion": 4.2,
+       "position": [
+        2640,
+        640
+       ],
+       "parameters": {
+        "method": "PUT",
+        "url": "={{ 'https://api.github.com/repos/UHeeJoon/kube-chatops-deploy/contents/demo/' + $json.deploy + '/deployment.yaml' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+         "parameters": [
+          {
+           "name": "Accept",
+           "value": "application/vnd.github+json"
+          },
+          {
+           "name": "X-GitHub-Api-Version",
+           "value": "2022-11-28"
+          },
+          {
+           "name": "User-Agent",
+           "value": "kube-chatops-n8n"
+          }
+         ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.put) }}",
+        "options": {
+         "timeout": 30000,
+         "response": {
+          "response": {
+           "fullResponse": true,
+           "neverError": true
+          }
+         }
+        }
+       },
+       "credentials": {
+        "httpHeaderAuth": {
+         "id": "kcgithubdeploy01",
+         "name": "github: kube-chatops-deploy"
+        }
+       }
+      },
+      {
+       "id": "bc792482-2184-5401-a68c-b7cf975fc444",
+       "name": "커밋 결과",
+       "type": "n8n-nodes-base.code",
+       "typeVersion": 2,
+       "position": [
+        2860,
+        640
+       ],
+       "parameters": {
+        "jsCode": "const req = $('파일 고치기').item.json;\nconst ok = [200, 201].includes($json.statusCode);\nconst sha = ok ? $json.body.commit.sha : '';\nreturn [{ json: { ...req, result: ok ? (req.op === 'scale' ? 'scale_committed' : 'rollback_committed') : 'commit_failed',\n  done: ok ? `\\`${req.op}\\` ${req.namespace}/${req.deploy} (${req.what})` : null,\n  note: ok ? `:rocket: <@${req.user_id}> 승인으로 \\`${req.namespace}/${req.deploy}\\` ${req.what} 커밋을 올렸습니다 (<${$json.body.commit.html_url}|${sha.slice(0, 7)}>). 배포 검사 → release → Argo CD 반영까지 3~5분 걸립니다.`\n    : `커밋 실패 (${$json.statusCode}): ${JSON.stringify($json.body?.message ?? '').slice(0, 200)}` } }];"
        }
       },
       {
@@ -1490,11 +1994,11 @@ data:
        "type": "n8n-nodes-base.code",
        "typeVersion": 2,
        "position": [
-        1760,
+        3080,
         300
        ],
        "parameters": {
-        "jsCode": "const it = $json;\nreturn [{ json: { channel: it.channel_id, thread_ts: it.thread_id, text: it.note || '처리했습니다.',\n  audit: { flow: 'wf-03-actions', result: it.result ?? it.op, op: it.op, target: it.pod ? `${it.namespace}/${it.pod}` : null,\n    user_id: it.user_id, role: it.role, channel_id: it.channel_id, thread_id: it.thread_id } } }];"
+        "jsCode": "// 스레드 답장 + 실행한 조치의 버튼을 카드에서 빼고 \"누가 언제 승인\" 한 줄로 바꾼다 (두 번 누르지 않게).\nconst it = $json;\nlet card = null;\nif (it.done && it.message_ts && (it.message?.blocks ?? []).length) {\n  const kst = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });\n  const out = [];\n  for (const b of it.message.blocks) {\n    if (b.type !== 'actions') { out.push(b); continue; }\n    const rest = (b.elements ?? []).filter(e => !(e.action_id === it.action?.id && String(e.value) === String(it.action?.value)));\n    if (rest.length !== (b.elements ?? []).length) out.push({ type: 'context', elements: [{ type: 'mrkdwn', text: `:white_check_mark: ${it.done} · <@${it.user_id}> 승인 · ${kst}` }] });\n    if (rest.length) out.push({ ...b, elements: rest });\n  }\n  card = { channel: it.channel_id, ts: it.message_ts, text: it.message?.text || '조치 승인', blocks: out };\n}\nreturn [{ json: { channel: it.channel_id, thread_ts: it.thread_id, text: it.note || '처리했습니다.', card,\n  audit: { flow: 'wf-03-actions', result: it.result ?? it.op, op: it.op, target: it.pod ? `${it.namespace}/${it.pod}` : it.deploy ? `${it.namespace}/deployment/${it.deploy}` : null,\n    detail: it.what ?? null, user_id: it.user_id, role: it.role, channel_id: it.channel_id, thread_id: it.thread_id } } }];"
        }
       },
       {
@@ -1503,7 +2007,7 @@ data:
        "type": "n8n-nodes-base.httpRequest",
        "typeVersion": 4.2,
        "position": [
-        1980,
+        3300,
         300
        ],
        "parameters": {
@@ -1532,16 +2036,84 @@ data:
        }
       },
       {
+       "id": "5199e4d0-0a0d-5aa9-82d8-cac61597ad85",
+       "name": "카드 고칠 것?",
+       "type": "n8n-nodes-base.if",
+       "typeVersion": 2.2,
+       "position": [
+        3520,
+        300
+       ],
+       "parameters": {
+        "conditions": {
+         "options": {
+          "caseSensitive": true,
+          "leftValue": "",
+          "typeValidation": "loose",
+          "version": 2
+         },
+         "conditions": [
+          {
+           "id": "9328c5a2-8c36-5f96-9661-103973760c15",
+           "leftValue": "={{ !!$('답장 정리').item.json.card }}",
+           "rightValue": "",
+           "operator": {
+            "type": "boolean",
+            "operation": "true",
+            "singleValue": true
+           }
+          }
+         ],
+         "combinator": "and"
+        },
+        "options": {}
+       }
+      },
+      {
+       "id": "981097be-ede6-5181-b37b-cf65720c00ac",
+       "name": "카드 고치기",
+       "type": "n8n-nodes-base.httpRequest",
+       "typeVersion": 4.2,
+       "position": [
+        3740,
+        220
+       ],
+       "parameters": {
+        "method": "POST",
+        "url": "http://chat-gateway.aiops.svc:8080/slack/update",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($('답장 정리').item.json.card) }}",
+        "options": {
+         "timeout": 30000,
+         "response": {
+          "response": {
+           "fullResponse": true,
+           "neverError": true
+          }
+         }
+        }
+       },
+       "credentials": {
+        "httpHeaderAuth": {
+         "id": "kcgatewayapi0001",
+         "name": "chat-gateway API"
+        }
+       }
+      },
+      {
        "id": "8e8b0cf9-1f1a-52c9-8123-3c8dcfe4822a",
        "name": "감사 기록",
        "type": "n8n-nodes-base.code",
        "typeVersion": 2,
        "position": [
-        2200,
+        3960,
         300
        ],
        "parameters": {
-        "jsCode": "return [{ json: { ...$('답장 정리').item.json.audit, slack_status: $json.statusCode, execution_id: $execution.id } }];"
+        "jsCode": "return [{ json: { ...$('답장 정리').item.json.audit, slack_status: $('답장').item.json.statusCode, execution_id: $execution.id } }];"
        }
       },
       {
@@ -1550,7 +2122,7 @@ data:
        "type": "n8n-nodes-base.executeWorkflow",
        "typeVersion": 1.2,
        "position": [
-        2420,
+        4180,
         300
        ],
        "parameters": {
@@ -1599,7 +2171,7 @@ data:
         ],
         [
          {
-          "node": "답장 정리",
+          "node": "재시작?",
           "type": "main",
           "index": 0
          }
@@ -1668,6 +2240,217 @@ data:
         ]
        ]
       },
+      "재시작?": {
+       "main": [
+        [
+         {
+          "node": "Deployment 확인",
+          "type": "main",
+          "index": 0
+         }
+        ],
+        [
+         {
+          "node": "Git 조치?",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
+      "Deployment 확인": {
+       "main": [
+        [
+         {
+          "node": "재시작 판단",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
+      "재시작 판단": {
+       "main": [
+        [
+         {
+          "node": "재시작 가능?",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
+      "재시작 가능?": {
+       "main": [
+        [
+         {
+          "node": "재시작",
+          "type": "main",
+          "index": 0
+         }
+        ],
+        [
+         {
+          "node": "답장 정리",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
+      "재시작": {
+       "main": [
+        [
+         {
+          "node": "재시작 결과",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
+      "재시작 결과": {
+       "main": [
+        [
+         {
+          "node": "답장 정리",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
+      "Git 조치?": {
+       "main": [
+        [
+         {
+          "node": "현재 파일",
+          "type": "main",
+          "index": 0
+         }
+        ],
+        [
+         {
+          "node": "답장 정리",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
+      "현재 파일": {
+       "main": [
+        [
+         {
+          "node": "롤백?",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
+      "롤백?": {
+       "main": [
+        [
+         {
+          "node": "최근 커밋",
+          "type": "main",
+          "index": 0
+         }
+        ],
+        [
+         {
+          "node": "파일 고치기",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
+      "최근 커밋": {
+       "main": [
+        [
+         {
+          "node": "직전 커밋",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
+      "직전 커밋": {
+       "main": [
+        [
+         {
+          "node": "이전 파일",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
+      "이전 파일": {
+       "main": [
+        [
+         {
+          "node": "파일 고치기",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
+      "파일 고치기": {
+       "main": [
+        [
+         {
+          "node": "커밋할 것?",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
+      "커밋할 것?": {
+       "main": [
+        [
+         {
+          "node": "커밋",
+          "type": "main",
+          "index": 0
+         }
+        ],
+        [
+         {
+          "node": "답장 정리",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
+      "커밋": {
+       "main": [
+        [
+         {
+          "node": "커밋 결과",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
+      "커밋 결과": {
+       "main": [
+        [
+         {
+          "node": "답장 정리",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
       "답장 정리": {
        "main": [
         [
@@ -1680,6 +2463,35 @@ data:
        ]
       },
       "답장": {
+       "main": [
+        [
+         {
+          "node": "카드 고칠 것?",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
+      "카드 고칠 것?": {
+       "main": [
+        [
+         {
+          "node": "카드 고치기",
+          "type": "main",
+          "index": 0
+         }
+        ],
+        [
+         {
+          "node": "감사 기록",
+          "type": "main",
+          "index": 0
+         }
+        ]
+       ]
+      },
+      "카드 고치기": {
        "main": [
         [
          {
