@@ -27,3 +27,13 @@ spec:
           annotations:
             summary: '이상 탐지기(mcp-anomaly) 지표가 없음'
             description: 'mcp-anomaly 파드가 없거나 수집되지 않는다.'
+        # 기준 이동 (11-28): 모델의 "평소" 는 학습 기간의 평균이다. 배포로 메모리 사용량이 달라지거나 트래픽 수준이 바뀌면
+        # 장애가 아닌데도 z 가 한쪽으로 치우친 채 머문다. 6시간 중앙값은 짧은 장애(수십 분)에는 움직이지 않으므로,
+        # 이것이 2(이상 한계 4 의 절반)를 넘으면 세상이 바뀐 것이다 → 재학습. 지난 24시간 최댓값은 0.72.
+        - alert: AnomalyBaselineDrift
+          expr: max by (feature) (abs(quantile_over_time(0.5, (max by (feature) (anomaly_model_feature_z))[6h:1m]))) > 2
+          for: 30m
+          labels: { severity: warning, namespace: mlops }
+          annotations:
+            summary: '이상 탐지 모델의 평소 기준이 지금과 다름 ({{ $labels.feature }} 의 6시간 중앙값 z = {{ $value | printf "%.1f" }})'
+            description: '{{ $labels.feature }} 가 6시간 넘게 학습 때의 평소 값에서 벗어나 있다. 장애가 아니라 평소 수준이 바뀐 것이면(배포, 트래픽 변화) Slack 에서 재학습을 실행하고, 결과를 보고 승격한다.'
