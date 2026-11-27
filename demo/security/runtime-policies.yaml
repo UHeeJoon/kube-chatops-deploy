@@ -77,6 +77,20 @@ spec:
               values: [/su, /sudo, /pkexec, /doas, /nsenter, /unshare, /capsh, /setcap, /chroot]
           matchActions:
             - action: Sigkill
+    # busybox 계열 이미지는 /bin/su 가 busybox 로 가는 링크라 위 훅(실제 실행 파일을 본다)에 걸리지 않는다 (11-27 확인).
+    # 시스템 호출에 넘긴 경로로도 막는다. `busybox su` 처럼 직접 부르는 것은 여전히 못 막는다
+    # (setuid 가 없는 busybox 의 su 는 권한을 올리지 못하고, nsenter·unshare 는 파드가 capability 를 모두 버려 실패한다).
+    - call: sys_execve
+      syscall: true
+      args:
+        - { index: 0, type: string }
+      selectors:
+        - matchArgs:
+            - index: 0
+              operator: Postfix
+              values: [/su, /sudo, /pkexec, /doas, /nsenter, /unshare, /capsh, /setcap, /chroot]
+          matchActions:
+            - action: Sigkill
     # chmod u+s / g+s: 나중에 root 로 실행될 문을 만든다. 모든 chmod 계열 시스템 호출이 지나는 보안 훅에서 막는다.
     # 시스템 호출에 Sigkill 만 걸면 호출은 끝난 뒤 죽어서 비트가 이미 붙는다 (11-27 재현: rc=137 인데 -rwsr-xr-x).
     # 그래서 Override 로 호출 자체를 실패시키고(EPERM) 그 프로세스도 죽인다.
