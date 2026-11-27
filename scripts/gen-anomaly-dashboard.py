@@ -85,11 +85,20 @@ panel("timeseries", "특성별 z-score (왜 이상인가)", [("max by (feature) 
       "+ 는 평소보다 큼, - 는 작음. 점선 ±4 를 넘으면 그 특성만으로 이상 판정. 모델 v2 부터 나온다",
       defaults={"custom": {"thresholdsStyle": {"mode": "line+area"}, "fillOpacity": 0},
                 "thresholds": {"mode": "absolute", "steps": [{"color": "transparent", "value": None}, {"color": "red", "value": 4}]}})
-panel("timeseries", "규칙별 판정", [('max by (rule) (anomaly_model_is_anomaly{rule=~"iforest|zscore|traffic_drop"})', "{{rule}}")], 14, 10, 4, None,
-      "iforest: 여러 지표의 조합이 평소와 다름. zscore: 한 지표가 크게 벗어남. traffic_drop: 요청 수가 학습 기간 하위 1% 의 절반 아래 (모델 v6 부터)", defaults={**step_line, "min": 0, "max": 1.05})
+panel("timeseries", "규칙별 판정", [('max by (rule) (anomaly_model_is_anomaly{rule=~"iforest|zscore|traffic_drop|pod"})', "{{rule}}")], 14, 10, 4, None,
+      "iforest: 여러 지표의 조합이 평소와 다름. zscore: 한 지표가 크게 벗어남. traffic_drop: 요청 급감 (절대 하한 또는 한 시간 전 대비, v11 부터). pod: 파드별로 따로 채점했을 때 어느 파드든 이상", defaults={**step_line, "min": 0, "max": 1.05})
 panel("timeseries", "IsolationForest 이상 점수", [("max(anomaly_model_score)", "점수")], 14, 10, 4, None,
       "클수록 이상. 경계는 학습 정상 구간 점수의 상위 0.1% (MLflow run 의 threshold 지표)", gridPos={"x": 14, "y": y + 4, "w": 10, "h": 4})
 y += 8
+
+row("부분 급감과 파드별 판정")
+panel("timeseries", "요청 수: 한 시간 전 같은 시점 대비", [("max(anomaly_model_rps_vs_prev_cycle)", "비율")], 0, 12, 6, None,
+      "부하가 1시간 주기라 최근 평균이 아니라 한 주기 전과 비교한다. 정상은 0.88 이상, 학습된 경계(약 0.63) 아래면 급감. 모델 v11 부터 (그 전 모델은 0 으로 보인다)",
+      defaults={"min": 0, "custom": {"thresholdsStyle": {"mode": "line+area"}, "fillOpacity": 0},
+                "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": None}, {"color": "transparent", "value": 0.625}]}})
+panel("timeseries", "이상으로 판정된 파드 (z)", [("max by (pod, feature) (anomaly_model_pod_z)", "{{pod}} {{feature}}")], 12, 12, 6, None,
+      "같은 모델에 파드별 값을 따로 넣었을 때 이상인 파드만 값이 있다. 서비스 합계로는 절반으로 보이는 파드 하나의 문제를 가려낸다 (DemoSinglePodAnomaly)")
+y += 6
 
 row("모델에 들어가는 값 (1분 단위)")
 panel("timeseries", "요청 수", [(FEATURES["rps"], "rps")], 0, 5, 6, "reqps")

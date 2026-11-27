@@ -495,12 +495,84 @@ data:
        "options": {}
       },
       {
+       "type": "bargauge",
+       "title": "일의 종류별 모델 선택 (24h)",
+       "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+       },
+       "gridPos": {
+        "x": 0,
+        "y": 22,
+        "w": 12,
+        "h": 6
+       },
+       "targets": [
+        {
+         "expr": "round(sum by (tier, model, effort) (increase(agent_model_pick_total[24h])))",
+         "legendFormat": "{{tier}}: {{model}} / {{effort}}",
+         "refId": "A",
+         "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+         }
+        }
+       ],
+       "fieldConfig": {
+        "defaults": {
+         "unit": "short"
+        },
+        "overrides": []
+       },
+       "options": {
+        "displayMode": "basic",
+        "orientation": "horizontal"
+       },
+       "description": "answer: 질문, light: 가벼운 알림 조사(지연, 오류, 파드 하나 이상), heavy: 그 밖의 조사, thread: 스레드가 처음 고른 모델을 이어 씀"
+      },
+      {
+       "type": "bargauge",
+       "title": "알림 선조회 (24h)",
+       "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+       },
+       "gridPos": {
+        "x": 12,
+        "y": 22,
+        "w": 12,
+        "h": 6
+       },
+       "targets": [
+        {
+         "expr": "round(sum by (alertname, runbook, checks) (increase(agent_prefetch_total[24h])))",
+         "legendFormat": "{{alertname}} 런북={{runbook}} 확인={{checks}}",
+         "refId": "A",
+         "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+         }
+        }
+       ],
+       "fieldConfig": {
+        "defaults": {
+         "unit": "short"
+        },
+        "overrides": []
+       },
+       "options": {
+        "displayMode": "basic",
+        "orientation": "horizontal"
+       },
+       "description": "런북=none 은 알림이 왔는데 붙일 런북이 없던 경우 (런북 빈틈)"
+      },
+      {
        "type": "row",
        "title": "요청과 조사",
        "collapsed": false,
        "gridPos": {
         "x": 0,
-        "y": 22,
+        "y": 28,
         "w": 24,
         "h": 1
        },
@@ -515,7 +587,7 @@ data:
        },
        "gridPos": {
         "x": 0,
-        "y": 23,
+        "y": 29,
         "w": 8,
         "h": 7
        },
@@ -554,7 +626,7 @@ data:
        },
        "gridPos": {
         "x": 8,
-        "y": 23,
+        "y": 29,
         "w": 8,
         "h": 7
        },
@@ -590,7 +662,7 @@ data:
        },
        "gridPos": {
         "x": 16,
-        "y": 23,
+        "y": 29,
         "w": 8,
         "h": 7
        },
@@ -619,7 +691,7 @@ data:
        "collapsed": false,
        "gridPos": {
         "x": 0,
-        "y": 30,
+        "y": 36,
         "w": 24,
         "h": 1
        },
@@ -634,7 +706,7 @@ data:
        },
        "gridPos": {
         "x": 0,
-        "y": 31,
+        "y": 37,
         "w": 10,
         "h": 8
        },
@@ -673,7 +745,7 @@ data:
        },
        "gridPos": {
         "x": 10,
-        "y": 31,
+        "y": 37,
         "w": 8,
         "h": 8
        },
@@ -705,7 +777,7 @@ data:
        },
        "gridPos": {
         "x": 18,
-        "y": 31,
+        "y": 37,
         "w": 3,
         "h": 4
        },
@@ -750,7 +822,7 @@ data:
        },
        "gridPos": {
         "x": 21,
-        "y": 31,
+        "y": 37,
         "w": 3,
         "h": 4
        },
@@ -796,7 +868,7 @@ data:
        },
        "gridPos": {
         "x": 18,
-        "y": 35,
+        "y": 41,
         "w": 6,
         "h": 4
        },

@@ -47,6 +47,11 @@ y += 8
 panel("timeseries", "모델별 비용 (구간별)", [(f"sum by (model) (increase({COST}[$__interval]))", "{{model}}")], 0, 12, 7, "currencyUSD", "fallback 으로 다른 모델이 응답하면 여기 따로 보인다")
 panel("timeseries", "오늘 누적 사용액 vs 예산", [("max(agent_budget_spent_today_usd)", "사용액"), ("max(agent_budget_daily_limit_usd)", "예산")], 12, 12, 7, "currencyUSD")
 y += 7
+panel("bargauge", "일의 종류별 모델 선택 (24h)", [("round(sum by (tier, model, effort) (increase(agent_model_pick_total[24h])))", "{{tier}}: {{model}} / {{effort}}")], 0, 12, 6, "short",
+      "answer: 질문, light: 가벼운 알림 조사(지연, 오류, 파드 하나 이상), heavy: 그 밖의 조사, thread: 스레드가 처음 고른 모델을 이어 씀", options={"displayMode": "basic", "orientation": "horizontal"})
+panel("bargauge", "알림 선조회 (24h)", [("round(sum by (alertname, runbook, checks) (increase(agent_prefetch_total[24h])))", "{{alertname}} 런북={{runbook}} 확인={{checks}}")], 12, 12, 6, "short",
+      "런북=none 은 알림이 왔는데 붙일 런북이 없던 경우 (런북 빈틈)", options={"displayMode": "basic", "orientation": "horizontal"})
+y += 6
 
 row("요청과 조사")
 panel("timeseries", "API 요청 (구간별)", [("sum by (api, status) (increase(agent_requests_total[$__interval]))", "{{api}} {{status}}")], 0, 8, 7, "short", "401: 토큰 오류, 429: 예산 초과, 500: 내부 오류")
