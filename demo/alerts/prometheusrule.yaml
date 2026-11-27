@@ -36,6 +36,28 @@ spec:
           labels: { severity: warning, kube_chatops: "true" }
           annotations:
             summary: "{{ $labels.pod }} 메모리가 limit 의 80%를 넘었습니다 ({{ $value | humanizePercentage }})"
+        # 이상 탐지 모델의 판정을 알림으로 (11-28). 모델은 지연·오류에서는 위 규칙보다 빠르지 않지만(0~1분),
+        # 메모리가 천천히 차오르는 누수는 한도 80% 알림보다 4~22분 먼저 잡았다 (증가 속도 특성).
+        # z 4 = 분당 한도의 2% (평소 최대 0.3%). 재시작 직후 5분은 특성이 비어 있어 걸리지 않는다.
+        - alert: DemoMemoryLeakSuspected
+          expr: |
+            max(anomaly_model_feature_z{feature="mem_growth"}) >= 4
+              unless on() (count(ALERTS{namespace="demo", alertname="DemoMemoryNearLimit", alertstate="firing"}) > 0)
+          for: 5m
+          labels: { severity: warning, kube_chatops: "true", namespace: demo }
+          annotations:
+            summary: "demo-app 메모리가 평소보다 빠르게 늘고 있습니다 (증가 속도 z = {{ $value | printf \"%.1f\" }}). 아직 한도 80% 전입니다"
+        # 모델은 이상이라는데 demo 의 다른 알림이 하나도 없을 때. 임계값 규칙이 모르는 종류의 문제를 조사로 넘긴다.
+        # v8 이후 이런 판정은 0건이었다 (약 30시간). 소음이 생기면 for 를 늘린다.
+        - alert: DemoAnomalyUnexplained
+          expr: |
+            max(anomaly_model_is_anomaly{rule="hybrid"}) == 1
+              unless on() (count(ALERTS{namespace="demo", alertname!="DemoAnomalyUnexplained"}) > 0)
+          for: 5m
+          labels: { severity: warning, kube_chatops: "true", namespace: demo }
+          annotations:
+            summary: "이상 탐지 모델이 5분 넘게 이상으로 판정하는데 해당하는 알림이 없습니다"
+            description: "어느 지표가 벗어났는지는 detect_anomalies 의 main_signal 과 z 로 확인합니다."
         - alert: DemoPodRestarting
           expr: max by (namespace, pod) (increase(kube_pod_container_status_restarts_total{namespace="demo"}[10m])) >= 1
           labels: { severity: warning, kube_chatops: "true" }

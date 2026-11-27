@@ -24,7 +24,7 @@ spec:
           - { containerPort: 8080, protocol: TCP }
         resources:
           requests: { cpu: 50m, memory: 256Mi }
-          limits: { memory: 768Mi }
+          limits: { memory: 512Mi } # 사용 약 200Mi (11-28 측정). 모델을 읽을 때 잠깐 더 쓴다
         securityContext:
           runAsNonRoot: true
           runAsUser: 10001
