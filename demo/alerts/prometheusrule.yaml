@@ -54,12 +54,25 @@ spec:
         - alert: DemoAnomalyUnexplained
           expr: |
             max(anomaly_model_is_anomaly{rule="hybrid"}) == 1
-              unless on() (count(ALERTS{namespace="demo", alertname=~"DemoHighLatency|DemoHighErrorRate|DemoMemoryNearLimit|DemoMemoryLeakSuspected"}) > 0)
+              unless on() (count(ALERTS{namespace="demo", alertname=~"DemoHighLatency|DemoHighErrorRate|DemoMemoryNearLimit|DemoMemoryLeakSuspected|DemoSinglePodAnomaly"}) > 0)
           for: 5m
           labels: { severity: warning, kube_chatops: "true", namespace: demo }
           annotations:
             summary: "이상 탐지 모델이 5분 넘게 이상으로 판정하는데 해당하는 알림이 없습니다"
             description: "어느 지표가 벗어났는지는 detect_anomalies 의 main_signal 과 z 로 확인합니다."
+        # 파드 하나만 이상. 모델 입력이 서비스 합계라 파드 둘 중 하나의 문제는 절반으로 보인다.
+        # 11-28 시험: 파드 하나에 오류 6% → 합계 3% 로 DemoHighErrorRate(5%) 에 닿지 않았고 합계 z 는 2.9 였다.
+        # 같은 모델에 파드별 값을 넣으면 4분에 그 파드가 z 5.3 으로 잡혔다 (탐지기의 anomaly_model_pod_z, 이상인 파드만 값이 있다).
+        # 서비스 전체 알림이 울리고 있으면 그쪽 조사가 파드까지 본다 (detect_anomalies 의 pods).
+        - alert: DemoSinglePodAnomaly
+          expr: |
+            max by (pod, feature) (anomaly_model_pod_z) > 0
+              unless on() (count(ALERTS{namespace="demo", alertname=~"DemoHighLatency|DemoHighErrorRate|DemoMemoryNearLimit|DemoMemoryLeakSuspected"}) > 0)
+          for: 5m
+          labels: { severity: warning, kube_chatops: "true", namespace: demo }
+          annotations:
+            summary: '{{ $labels.pod }} 만 이상으로 판정됩니다 ({{ $labels.feature }} z = {{ $value | printf "%.1f" }})'
+            description: "서비스 합계로는 알림 기준에 닿지 않지만 이 파드의 값이 평소에서 벗어나 있습니다. detect_anomalies 의 pods 와 이 파드의 로그·상태를 확인합니다."
         - alert: DemoPodRestarting
           expr: max by (namespace, pod) (increase(kube_pod_container_status_restarts_total{namespace="demo"}[10m])) >= 1
           labels: { severity: warning, kube_chatops: "true" }
