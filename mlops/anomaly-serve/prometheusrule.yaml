@@ -33,7 +33,10 @@ spec:
         - alert: AnomalyBaselineDrift
           expr: max by (feature) (abs(quantile_over_time(0.5, (max by (feature) (anomaly_model_feature_z))[6h:1m]))) > 2
           for: 30m
-          labels: { severity: warning, namespace: mlops }
+          # demo 서비스의 평소 기준에 대한 알림이라 namespace 를 demo 로 둔다. Alertmanager 의 매처가 네임스페이스 기준이라
+          # 이렇게 해야 demo 의 AlertmanagerConfig 를 타고 에이전트 조사로 넘어간다 → 보고서에 '재학습 시작' 버튼 (operator 승인).
+          # 자동으로 재학습을 제출하지 않는다: 실행은 사람이 승인한다는 원칙을 재학습에도 그대로 둔다.
+          labels: { severity: warning, namespace: demo, kube_chatops: "true" }
           annotations:
             summary: '이상 탐지 모델의 평소 기준이 지금과 다름 ({{ $labels.feature }} 의 6시간 중앙값 z = {{ $value | printf "%.1f" }})'
             description: '{{ $labels.feature }} 가 6시간 넘게 학습 때의 평소 값에서 벗어나 있다. 장애가 아니라 평소 수준이 바뀐 것이면(배포, 트래픽 변화) Slack 에서 재학습을 실행하고, 결과를 보고 승격한다.'
