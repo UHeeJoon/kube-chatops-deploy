@@ -49,10 +49,12 @@ spec:
             summary: "demo-app 메모리가 평소보다 빠르게 늘고 있습니다 (증가 속도 z = {{ $value | printf \"%.1f\" }}). 아직 한도 80% 전입니다"
         # 모델은 이상이라는데 demo 의 다른 알림이 하나도 없을 때. 임계값 규칙이 모르는 종류의 문제를 조사로 넘긴다.
         # v8 이후 이런 판정은 0건이었다 (약 30시간). 소음이 생기면 for 를 늘린다.
+        # "다른 알림" 은 모델이 보는 지표(지연, 오류율, 메모리)에 대한 알림만 센다. 처음에는 demo 의 모든 알림을 셌는데,
+        # 격리된 파드 하나의 DemoPodRestarting 이 몇 시간째 울리고 있어 요청이 95% 줄어든 8분 동안 이 알림이 뜨지 않았다 (11-28 시험).
         - alert: DemoAnomalyUnexplained
           expr: |
             max(anomaly_model_is_anomaly{rule="hybrid"}) == 1
-              unless on() (count(ALERTS{namespace="demo", alertname!="DemoAnomalyUnexplained"}) > 0)
+              unless on() (count(ALERTS{namespace="demo", alertname=~"DemoHighLatency|DemoHighErrorRate|DemoMemoryNearLimit|DemoMemoryLeakSuspected"}) > 0)
           for: 5m
           labels: { severity: warning, kube_chatops: "true", namespace: demo }
           annotations:
