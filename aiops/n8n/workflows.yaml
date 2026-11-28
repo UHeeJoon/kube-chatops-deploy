@@ -285,7 +285,7 @@ data:
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ text: $json.text }) }}",
+        "jsonBody": "={{ JSON.stringify({ text: $json.text, thread_id: `slack-${$('준비').item.json.channel_id}-${$('준비').item.json.thread_id}` }) }}",
         "options": {
          "timeout": 30000,
          "response": {
