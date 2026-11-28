@@ -44,7 +44,7 @@ spec:
   templateDefaults:
     retryStrategy: { limit: "2", retryPolicy: OnError } # 노드·네트워크 오류만 재시도 (평가 실패는 재시도하지 않음)
     container:
-      image: ghcr.io/uheejoon/kube-chatops/anomaly-train@sha256:1d26518e2c55bd9e29d8f5b15b71df79098493062671a25600e3abbd8a40397b
+      image: ghcr.io/uheejoon/kube-chatops/anomaly-train@sha256:e888cc4c275ae29ba593d0623388ff330da81882e9c2aa4a7e1aa685f1ab480a
       envFrom:
         - secretRef: { name: mlops-s3 } # 단계 사이 데이터(MinIO)
       env:
