@@ -9,8 +9,10 @@ spec:
     matchLabels: { app.kubernetes.io/name: agent }
   policyTypes: [Ingress, Egress]
   ingress:
+    # 조사 API 를 부르는 것은 n8n 뿐이다. 같은 네임스페이스의 다른 파드(검색 서버, 게이트웨이, 백업 작업)에는 열지 않는다 (11-28 검토: 전체에 열려 있었다)
     - from:
-        - podSelector: {}
+        - podSelector:
+            matchLabels: { app.kubernetes.io/name: n8n }
       ports:
         - { port: 8080, protocol: TCP }
   egress:
