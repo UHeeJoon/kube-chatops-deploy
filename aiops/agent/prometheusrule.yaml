@@ -1,0 +1,57 @@
+# 조사 파이프라인 자체를 감시한다 (11-28 전체 검토).
+# 알림 → n8n → 에이전트 → Slack 가운데 하나가 멈추면 장애 알림이 조용히 사라진다. 그때는 이 파이프라인으로 알릴 수 없으므로
+# kube_chatops 라벨을 붙이지 않는다: 에이전트 조사를 거치지 않고 플랫폼 알림(Alertmanager → Slack)으로 바로 간다.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: aiops-pipeline
+  namespace: aiops
+  labels:
+    release: kube-prometheus
+spec:
+  groups:
+    - name: aiops-pipeline
+      rules:
+        - alert: AiopsComponentDown
+          expr: up{namespace=~"aiops|mcp"} == 0
+          for: 3m
+          labels: { severity: critical }
+          annotations:
+            summary: '{{ $labels.job }} 가 3분째 지표를 내지 않음'
+            description: '조사 파이프라인의 한 부분이 멈췄다. agent·n8n·chat-gateway 가 멈추면 장애 알림이 Slack 에 오지 않고, MCP 서버가 멈추면 그 도구 없이 조사한다. kubectl -n {{ $labels.namespace }} get pod 로 상태를 본다.'
+        # 파드가 아예 없으면 up 시계열도 없어 위 규칙이 걸리지 않는다
+        - alert: AiopsComponentAbsent
+          expr: |
+            absent(up{namespace="aiops", job="agent"})
+            or absent(up{namespace="aiops", job="n8n"})
+            or absent(up{namespace="aiops", job="chat-gateway"})
+          for: 5m
+          labels: { severity: critical }
+          annotations:
+            summary: '{{ $labels.job }} 의 지표가 없음 (파드가 없거나 수집 대상에서 빠짐)'
+            description: '장애 알림이 Slack 에 오지 않는 상태일 수 있다. kubectl -n aiops get deploy 로 확인한다.'
+        - alert: AiopsBudgetNearLimit
+          expr: max(agent_budget_spent_today_usd) / max(agent_budget_daily_limit_usd) > 0.8
+          for: 5m
+          labels: { severity: warning }
+          annotations:
+            summary: '오늘 LLM 예산의 {{ $value | humanizePercentage }} 사용'
+            description: '예산을 다 쓰면 자정(Asia/Seoul)까지 조사가 "예산 소진" 답만 낸다. 같은 알림이 반복해서 조사를 일으키고 있는지 LLM 비용 대시보드에서 본다.'
+        - alert: AiopsInvestigationFailing
+          expr: sum(increase(agent_requests_total{api="investigate", status=~"5..|429"}[30m])) >= 2
+          labels: { severity: warning }
+          annotations:
+            summary: '최근 30분 조사 {{ $value | printf "%.0f" }}건이 실패하거나 예산으로 거절됨'
+            description: '에이전트 로그(kubectl -n aiops logs deploy/agent)에서 원인을 본다. 429 는 예산 소진, 5xx 는 LLM API·DB·코드 오류다.'
+        - alert: AiopsSlackForwardFailing
+          expr: sum(increase(gateway_forward_failures_total[15m])) > 0
+          labels: { severity: warning }
+          annotations:
+            summary: 'Slack 이벤트를 n8n 으로 넘기지 못함 (15분에 {{ $value | printf "%.0f" }}건)'
+            description: '멘션이나 버튼 클릭이 처리되지 않았다. n8n 상태와 chat-gateway 로그를 본다.'
+        - alert: AiopsMcpUnavailable
+          expr: sum by (server) (increase(agent_mcp_unavailable_total[30m])) > 0
+          labels: { severity: warning }
+          annotations:
+            summary: '에이전트가 MCP 서버 {{ $labels.server }} 에 붙지 못하고 조사함'
+            description: '그 서버의 도구 없이 조사했으므로 보고서 근거가 빠져 있을 수 있다. kubectl -n mcp get pod, kubectl -n aiops get pod 로 확인한다.'

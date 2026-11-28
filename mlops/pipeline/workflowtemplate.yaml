@@ -21,6 +21,11 @@ spec:
   synchronization:
     mutexes: [{ name: anomaly-train }]
   activeDeadlineSeconds: 1800
+  # 끝난 워크플로와 파드를 치운다 (11-28: 설정이 없어 실패 파드와 지난 워크플로가 계속 남아 있었다).
+  # 성공은 7일, 실패는 14일 뒤 워크플로를 지운다. 데이터셋·평가 결과는 MinIO 와 MLflow 에 따로 남는다.
+  # 성공한 파드는 1시간 뒤 지우고 실패한 파드는 원인을 볼 수 있게 워크플로가 지워질 때까지 둔다.
+  ttlStrategy: { secondsAfterSuccess: 604800, secondsAfterFailure: 1209600 }
+  podGC: { strategy: OnPodSuccess, deleteDelayDuration: 1h }
   arguments:
     parameters:
       - { name: days, value: "7" } # Prometheus 보존 기간이 7일
